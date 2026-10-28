@@ -327,9 +327,14 @@ fn thai_lines(t: &AddedText, para: &str, width: f64) -> Result<Vec<String>, Edit
         }
 
         // Does the whole word fit on the current line?
-        if line.is_empty() || used + group.advance <= width {
+        if !line.is_empty() && used + group.advance <= width {
             line.push_str(&group.text);
             used += group.advance;
+            continue;
+        }
+        if line.is_empty() && group.advance <= width {
+            line.push_str(&group.text);
+            used = group.advance;
             continue;
         }
 
