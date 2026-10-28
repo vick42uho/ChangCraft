@@ -881,7 +881,11 @@ impl Metrics {
     pub fn encode(&self, text: &str) -> Option<Vec<u8>> {
         // The lowest code showing each wanted character. Explicit entries and the encoding are
         // checked one by one; each range is asked for the wanted characters it can show.
-        let wanted: HashSet<char> = text.chars().collect();
+        let mut wanted: HashSet<char> = text.chars().collect();
+        if wanted.contains(&'\u{0E33}') {
+            wanted.insert('\u{0E4D}');
+            wanted.insert('\u{0E32}');
+        }
         let mut reverse: HashMap<char, u32> = HashMap::new();
         for &ch in &wanted {
             if let Some(&code) = self.explicit_reverse.get(&ch) {
@@ -897,9 +901,20 @@ impl Metrics {
         }
         let mut out = Vec::with_capacity(text.len() * self.code_len);
         for ch in text.chars() {
-            let code = *reverse.get(&ch)?;
-            let bytes = code.to_be_bytes();
-            out.extend_from_slice(&bytes[4 - self.code_len.clamp(1, 4)..]);
+            if let Some(&code) = reverse.get(&ch) {
+                let bytes = code.to_be_bytes();
+                out.extend_from_slice(&bytes[4 - self.code_len.clamp(1, 4)..]);
+            } else if ch == '\u{0E33}'
+                && let (Some(&c1), Some(&c2)) = (reverse.get(&'\u{0E4D}'), reverse.get(&'\u{0E32}'))
+            {
+                let b1 = c1.to_be_bytes();
+                let b2 = c2.to_be_bytes();
+                let len = self.code_len.clamp(1, 4);
+                out.extend_from_slice(&b1[4 - len..]);
+                out.extend_from_slice(&b2[4 - len..]);
+            } else {
+                return None;
+            }
         }
         Some(out)
     }
