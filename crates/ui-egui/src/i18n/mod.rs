@@ -4171,6 +4171,115 @@ mod tests {
         }
     }
 
+    fn thai() -> Lang {
+        Lang::from_code("th").expect("th registered")
+    }
+
+    #[test]
+    fn thai_is_registered_and_persists() {
+        let th = thai();
+        assert_eq!(th.name(), "ไทย");
+        assert!(!th.rtl());
+        assert_eq!(normalize_pref("TH"), Some("th"));
+        for tag in ["th", "th-TH", "th_TH.UTF-8", "TH-th"] {
+            assert_eq!(lang_from_tag(tag), Some(th), "{tag}");
+        }
+        assert_eq!(first_supported("th-TH\r\nen-US"), Some(th));
+        assert_eq!(tr(th, "File"), "ไฟล์");
+        assert_eq!(tr(th, "Preferences"), "การตั้งค่า");
+        // No grammatical plural: single form.
+        assert_eq!(trn(th, 1, "{n} page", "{n} pages"), "1 หน้า");
+        assert_eq!(trn(th, 5, "{n} page", "{n} pages"), "5 หน้า");
+        let mut app = crate::PdfCraftApp::default();
+        app.set_option("language", "TH").unwrap();
+        assert_eq!(app.language, "th");
+        let mut restored = crate::PdfCraftApp::default();
+        restored.restore(&app.persist());
+        assert_eq!(restored.language, "th");
+        assert!(restored.set_option("language", "xx").is_err());
+        assert_eq!(restored.language, "th");
+    }
+
+    /// Thai translates every registered command and every All tools group, section and item.
+    #[test]
+    fn thai_covers_commands_and_catalogue() {
+        let th = thai();
+        for command in pdfcraft_engine::commands::COMMANDS {
+            assert!(has(th, command.label), "missing command: {}", command.label);
+            if let Some(menu) = command.menu {
+                assert!(has(th, menu), "missing menu: {menu}");
+            }
+        }
+        for group in pdfcraft_engine::catalog::TOOL_GROUPS {
+            assert!(has(th, group.label), "missing group: {}", group.label);
+            for section in group.sections {
+                assert!(has(th, section.title), "missing section: {}", section.title);
+                for item in section.items {
+                    assert!(has(th, item.label), "missing item: {}", item.label);
+                }
+            }
+        }
+    }
+
+    /// New tl!("literal") labels must not silently fall back to English.
+    #[test]
+    fn thai_covers_ui_literals() {
+        let th = thai();
+        let literals = ui_literals();
+        let missing: Vec<_> = literals.iter().filter(|label| !has(th, label)).collect();
+        assert!(missing.is_empty(), "untranslated Thai UI literals: {missing:#?}");
+    }
+
+    /// Thai has every key the other bundled catalogs have (English keys, not their translations).
+    #[test]
+    fn thai_covers_bundled_catalog_keys() {
+        let th = thai();
+        let mut missing = std::collections::BTreeSet::new();
+        for reference in LANGUAGES.iter().filter(|language| language.code != "th") {
+            let (entries, errors) = catalog::parse_entries(reference.source, reference.plural_forms());
+            assert!(errors.is_empty(), "{}: invalid reference catalog: {errors:?}", reference.code);
+            for entry in entries {
+                let translated = match entry.context.as_str() {
+                    "" => th.catalog().plain(&entry.source),
+                    "@id" => th.catalog().id(&entry.source),
+                    "@plural" => entry.source.split_once('|').and_then(|(one, other)| th.catalog().plural(one, other, 0)),
+                    context => th.catalog().contextual(context, &entry.source),
+                };
+                if translated.is_none() {
+                    missing.insert((entry.context, entry.source));
+                }
+            }
+        }
+        assert!(missing.is_empty(), "Thai misses bundled catalog keys: {missing:#?}");
+    }
+
+    /// With a craft-fonts Thai face, every Thai translation has glyphs: with all interface
+    /// faces (desktop) and with the Thai face as the only craft-fonts face (the web build keeps
+    /// it; Thai labels must not need another script face).
+    #[test]
+    fn thai_labels_have_glyphs() {
+        let faces: Vec<String> = pdfcraft_fonts::ui_thai_fonts().iter().map(|f| f.name()).collect();
+        if faces.is_empty() {
+            eprintln!("skipping Thai glyph checks: build with CRAFT_FONTS_DIR and a Thai face to run them");
+            return;
+        }
+        let th = thai();
+        let (entries, _) = parse_entries(th.0.source, th.0.plural_forms());
+        let labels: String = entries.iter().flat_map(|e| e.translation.chars()).chain(th.name().chars()).filter(|c| !c.is_control()).collect();
+        let mut thai_only = crate::theme::font_definitions();
+        for family in thai_only.families.values_mut() {
+            family.retain(|name| !pdfcraft_fonts::CRAFT_FONTS.iter().any(|face| face.name() == *name) || faces.contains(name));
+        }
+        use egui::epaint::text::{Fonts, TextOptions};
+        for (build, defs) in [("all faces", crate::theme::font_definitions()), ("Thai face only", thai_only)] {
+            let mut fonts = Fonts::new(TextOptions::default(), defs);
+            for id in [egui::FontId::proportional(13.0), egui::FontId::monospace(13.0), crate::theme::medium(13.0), crate::theme::semibold(17.0)] {
+                let missing: std::collections::BTreeSet<char> = labels.chars().filter(|c| !fonts.has_glyphs(&id, &c.to_string())).collect();
+                assert!(missing.is_empty(), "{build}: {id:?} lacks Thai label glyphs {missing:?}");
+            }
+        }
+    }
+
     /// Every bundled catalog is well-formed and consistent with its sources.
     #[test]
     fn bundled_catalogs_are_consistent() {

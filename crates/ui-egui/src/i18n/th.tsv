@@ -2681,3 +2681,91 @@ key	Space	Space
 	Page properties	คุณสมบัติหน้า
 	The password must have at least 8 characters.	รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร
 theme	Appearance	ลักษณะที่ปรากฏ
+
+# Form calculation order, text field table, and UI additions (2026-10).
+	Calculation order	ลำดับการคำนวณ
+	Set calculation order	กำหนดลำดับการคำนวณ
+	Fix order	แก้ไขลำดับ
+	Move only what must move, so every field calculates after the fields it reads.	ย้ายเฉพาะฟิลด์ที่จำเป็นต้องย้าย เพื่อให้ทุกฟิลด์คำนวณหลังจากฟิลด์ที่นำค่ามาคำนวณ
+	Earlier in calculation order	ก่อนหน้าในลำดับการคำนวณ
+	Later in calculation order	ถัดไปในลำดับการคำนวณ
+	Too early	เร็วเกินไป
+	Reads {name}, which calculates later, so it shows an old value.	อ่านค่าจาก {name} ซึ่งคำนวณภายหลัง จึงแสดงค่าเดิม
+	Loop	ลูป
+	Reads {names}, which read it back. No order can fix a loop: change one of the formulas.	อ่านค่าจาก {names} ซึ่งอ่านค่ากลับมาเช่นกัน ไม่สามารถจัดลำดับเพื่อแก้ไขลูปได้: โปรดเปลี่ยนสูตรใดสูตรหนึ่ง
+	Not in order	ไม่อยู่ในลำดับ
+	Missing from the calculation order saved in the PDF: other PDF viewers may not calculate it.	ไม่มีในลำดับการคำนวณที่บันทึกไว้ใน PDF: โปรแกรมเปิดดู PDF อื่นอาจไม่คำนวณฟิลด์นี้
+	Back to Prepare a form	กลับไปที่เตรียมแบบฟอร์ม
+	{names} and {last}	{names} และ {last}
+	{field} reads no other field	{field} ไม่อ่านค่าจากฟิลด์อื่น
+	{field} reads {fields}	{field} อ่านค่าจาก {fields}
+	No field reads it	ไม่มีฟิลด์ใดอ่านค่านี้
+	The order saved in the PDF needs tidying	ลำดับที่บันทึกไว้ใน PDF จำเป็นต้องจัดระเบียบใหม่
+	Moves only what must move	ย้ายเฉพาะฟิลด์ที่จำเป็นต้องย้าย
+	Every field calculates after the fields it reads.	ทุกฟิลด์จะคำนวณหลังจากฟิลด์ที่นำค่ามาคำนวณ
+	Every field outside a loop calculates after the fields it reads.	ทุกฟิลด์ที่อยู่นอกลูปจะคำนวณหลังจากฟิลด์ที่นำค่ามาคำนวณ
+	{field} reads its own value	{field} อ่านค่าของตนเอง
+	{fields} read each other	{fields} อ่านค่าซึ่งกันและกัน
+	No order can fix a loop. Change one of the formulas.	ไม่สามารถจัดลำดับเพื่อแก้ไขลูปได้ โปรดเปลี่ยนสูตรใดสูตรหนึ่ง
+	Edit {field}'s formula	แก้ไขสูตรของ {field}
+	Order · top calculates first	ลำดับ · ด้านบนคำนวณก่อน
+	Script	สคริปต์
+	Links on page	ลิงก์บนหน้า
+	Show on the page which fields each field reads	แสดงบนหน้าเอกสารว่าแต่ละฟิลด์อ่านค่าจากฟิลด์ใด
+	Drag a field to move it, or select it and press {up} or {down}.	ลากฟิลด์เพื่อย้าย หรือเลือกฟิลด์แล้วกด {up} หรือ {down}
+	Add text field table	เพิ่มตารางฟิลด์ข้อความ
+	Text field table	ตารางฟิลด์ข้อความ
+	Text Field Table	ตารางฟิลด์ข้อความ
+	Columns	คอลัมน์
+	Row spacing	ระยะห่างแถว
+	Column spacing	ระยะห่างคอลัมน์
+	First row number	หมายเลขแถวแรก
+	Column widths	ความกว้างคอลัมน์
+	Distribute evenly	กระจายเท่ากัน
+	Field names	ชื่อฟิลด์
+	N or {row} is the row number, {col} the column number, {seq} the cell number. With none of them, the row number goes last.	N หรือ {row} คือหมายเลขแถว, {col} คือหมายเลขคอลัมน์, {seq} คือหมายเลขเซลล์ หากไม่ได้ระบุ หมายเลขแถวจะอยู่ท้ายสุด
+	Column {n}	คอลัมน์ {n}
+	Add fields	เพิ่มฟิลด์
+	the rows are too short: make the area taller, or use fewer rows or less row spacing	แถวเตี้ยเกินไป: ขยายพื้นที่ให้สูงขึ้น หรือลดจำนวนแถวหรือระยะห่างแถว
+	a column is too narrow: make the area wider, give the column more of it, or use fewer columns or less column spacing	คอลัมน์แคบเกินไป: ขยายพื้นที่ให้กว้างขึ้น แบ่งพื้นที่ให้คอลัมน์มากขึ้น หรือลดจำนวนคอลัมน์หรือระยะห่างคอลัมน์
+	field names can't contain a period: {name}	ชื่อฟิลด์ต้องไม่มีจุด (.): {name}
+	two cells would both be named {name}	มีสองเซลล์ที่จะใช้ชื่อ {name} ซ้ำกัน
+	a field named {name} already exists	มีฟิลด์ชื่อ {name} อยู่แล้ว
+	a table has 1 to {max} rows	ตารางมีได้ 1 ถึง {max} แถว
+	a table has 1 to {max} columns	ตารางมีได้ 1 ถึง {max} คอลัมน์
+	the first row number can be at most {max}	หมายเลขแถวแรกต้องไม่เกิน {max}
+	the area, the spacing and the column widths must be numbers, the spacing 0 or more and each width more than 0	พื้นที่ ระยะห่าง และความกว้างคอลัมน์ต้องเป็นตัวเลข โดยระยะห่างต้องตั้งแต่ 0 ขึ้นไป และความกว้างแต่ละคอลัมน์ต้องมากกว่า 0
+	the name is not a plain file name	ชื่อไม่ใช่ชื่อไฟล์ทั่วไป
+	Alignment	การจัดแนว
+	Always use my default zoom and page layout	ใช้การซูมและเค้าโครงหน้าเริ่มต้นของฉันเสมอ
+	Bulleted list	รายการสัญลักษณ์แสดงหัวข้อย่อย
+	Numbered list	รายการลำดับเลข
+	Thumbnail size	ขนาดภาพขนาดย่อ
+	Smaller thumbnails	ภาพขนาดย่อเล็กลง
+	Larger thumbnails	ภาพขนาดย่อใหญ่ขึ้น
+	Layer options	ตัวเลือกเลเยอร์
+	Less	น้อยลง
+	Other options	ตัวเลือกอื่น
+	Paragraph spacing	ระยะห่างย่อหน้า
+	Printer default	ค่าเริ่มต้นของเครื่องพิมพ์
+	Reading the printer's settings…	กำลังอ่านการตั้งค่าของเครื่องพิมพ์…
+	Remove {standard} identification	เอาการระบุมาตรฐาน {standard} ออก
+	Reset to Initial Visibility	รีเซ็ตเป็นการมองเห็นเริ่มต้น
+	Reshape comment	ปรับรูปทรงความคิดเห็น
+	Shrink the page content to make room for the header and footer	ย่อเนื้อหาหน้าเอกสารเพื่อให้มีพื้นที่สำหรับหัวกระดาษและท้ายกระดาษ
+	Subscript	ตัวห้อย
+	Superscript	ตัวยก
+	The document's security settings don't allow printing	การตั้งค่าความปลอดภัยของเอกสารไม่อนุญาตให้พิมพ์
+	The signature's signed attributes have no content type, which CMS requires; it was read anyway.	แอตทริบิวต์ที่มีการลงนามของลายเซ็นไม่มี content type ซึ่ง CMS กำหนด แต่ระบบยังคงอ่านค่าได้
+	The signature's signed attributes have no message digest, so the signature does not cover the document.	แอตทริบิวต์ที่มีการลงนามของลายเซ็นไม่มี message digest ลายเซ็นจึงไม่ครอบคลุมเอกสาร
+	The signature's signed attributes name a content type other than data, so it is not a signature of the document.	แอตทริบิวต์ที่มีการลงนามของลายเซ็นระบุ content type อื่นที่ไม่ใช่ data จึงไม่ใช่ลายเซ็นของเอกสาร
+	This signature uses an RSA key shorter than 2048 bits, which is no longer considered strong enough for signatures. It still validates, but it should not be relied on.	ลายเซ็นนี้ใช้คีย์ RSA ที่สั้นกว่า 2048 บิต ซึ่งไม่ถือว่าปลอดภัยเพียงพอสำหรับลายเซ็นอีกต่อไป ลายเซ็นยังคงตรวจสอบได้ แต่ไม่ควรเชื่อถือ
+	Zoom — type a percentage and press Enter	ซูม — พิมพ์เปอร์เซ็นต์แล้วกด Enter
+@plural	The calculation order has {n} entry that calculates nothing. Fix order removes it.|The calculation order has {n} entries that calculate nothing. Fix order removes them.	ลำดับการคำนวณมี {n} รายการที่ไม่ได้คำนวณค่าใดๆ "แก้ไขลำดับ" จะลบรายการออก
+@plural	{fields} is missing from the order saved in the PDF, so other PDF viewers may not calculate it.|{fields} are missing from the order saved in the PDF, so other PDF viewers may not calculate them.	{fields} ไม่มีในลำดับที่บันทึกไว้ใน PDF โปรแกรมเปิดดู PDF อื่นอาจไม่คำนวณฟิลด์นี้
+@plural	{fields} reads it|{fields} read it	{fields} อ่านค่านี้
+@plural	{field} calculates before {fields}, which it reads.|{field} calculates before {fields}, which it reads.	{field} คำนวณก่อน {fields} ที่ตนเองอ่านค่ามา
+@plural	{n} calculation now uses the new name.|{n} calculations now use the new name.	การคำนวณ {n} รายการเปลี่ยนมาใช้ชื่อใหม่แล้ว
+@plural	{n} field shows an old value|{n} fields show old values	{n} ฟิลด์แสดงค่าเดิม
+@plural	{n} more field calculates too early.|{n} more fields calculate too early.	มีอีก {n} ฟิลด์ที่คำนวณเร็วเกินไป
+	No field in this form calculates its value yet. Give a field a calculation on the Calculate tab of its properties, and it shows here.	แบบฟอร์มนี้ยังไม่มีฟิลด์ที่คำนวณค่า กำหนดการคำนวณให้ฟิลด์ในแท็บ "คำนวณ" ของคุณสมบัติฟิลด์ แล้วจะแสดงขึ้นที่นี่
