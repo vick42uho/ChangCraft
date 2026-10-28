@@ -40,6 +40,7 @@ fn no_start(c: char) -> bool {
         | '！' | '％' | '）' | '，' | '．' | '：' | '；' | '？' | '］' | '｝' | '｠' | '～'
         | '｡' | '｣' | '､' | '･' | 'ｰ' | 'ﾞ' | 'ﾟ'
         | '\u{ff67}'..='\u{ff6f}' // small half-width katakana
+        | 'ๆ' | 'ฯ' | '๏' | '๚' | '๛' // Thai punctuation (Maiyamok, Paiyannoi, Angkhankhu, Khomut)
     )
 }
 

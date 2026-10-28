@@ -278,7 +278,8 @@ fn wrapped(t: &AddedText) -> Vec<(String, bool)> {
 }
 
 /// Thai wrapping at shaped cluster boundaries never detaches a tone/vowel mark from its base.
-/// This is glyph-safe wrapping, not dictionary-based Thai word segmentation.
+/// Words separated by spaces wrap at whitespace first; individual words wider than the line
+/// wrap at cluster boundaries with leading-vowel and punctuation cohesion.
 fn thai_lines(t: &AddedText, para: &str, width: f64) -> Result<Vec<String>, EditError> {
     let (pieces, _) = shaped_layout(t, para, false)?;
     let mut atoms = Vec::new();
@@ -292,18 +293,101 @@ fn thai_lines(t: &AddedText, para: &str, width: f64) -> Result<Vec<String>, Edit
             })),
         }
     }
+
+    struct AtomGroup {
+        text: String,
+        advance: f64,
+        clusters: Vec<(String, f64)>,
+        is_space: bool,
+    }
+
+    let mut groups: Vec<AtomGroup> = Vec::new();
+    for (text, advance) in atoms {
+        let is_sp = text.chars().all(char::is_whitespace);
+        match groups.last_mut() {
+            Some(g) if g.is_space == is_sp => {
+                g.text.push_str(&text);
+                g.advance += advance;
+                g.clusters.push((text, advance));
+            }
+            _ => groups.push(AtomGroup { text: text.clone(), advance, clusters: vec![(text, advance)], is_space: is_sp }),
+        }
+    }
+
     let mut lines = Vec::new();
     let (mut line, mut used) = (String::new(), 0.0);
-    for (text, advance) in atoms {
-        if !line.is_empty() && used + advance > width {
-            lines.push(std::mem::take(&mut line));
+
+    for group in groups {
+        if group.is_space {
+            if !line.is_empty() {
+                line.push_str(&group.text);
+                used += group.advance;
+            }
+            continue;
+        }
+
+        // Does the whole word fit on the current line?
+        if line.is_empty() || used + group.advance <= width {
+            line.push_str(&group.text);
+            used += group.advance;
+            continue;
+        }
+
+        // Doesn't fit. If current line has content, finish it.
+        let trimmed = line.trim_end();
+        if !trimmed.is_empty() {
+            lines.push(trimmed.to_string());
+            line.clear();
             used = 0.0;
         }
-        line.push_str(&text);
-        used += advance;
+
+        // On a fresh line: does the whole word fit?
+        if group.advance <= width {
+            line.push_str(&group.text);
+            used = group.advance;
+            continue;
+        }
+
+        // Single word exceeds line width: wrap cluster-by-cluster with cohesion.
+        for (ctext, cadvance) in group.clusters {
+            if !line.is_empty() && used + cadvance > width {
+                // If line ends with a leading vowel, pull it back to join the next line with its consonant.
+                if let Some(last_c) = line.chars().last()
+                    && is_thai_leading_vowel(last_c)
+                    && let Some(popped) = line.pop()
+                {
+                    let popped_str = popped.to_string();
+                    let popped_w = t.family.width(&popped_str, t.size, t.bold, t.italic);
+                    let trimmed = line.trim_end();
+                    if !trimmed.is_empty() {
+                        lines.push(trimmed.to_string());
+                    }
+                    line = popped_str;
+                    used = popped_w;
+                } else {
+                    let trimmed = line.trim_end();
+                    if !trimmed.is_empty() {
+                        lines.push(trimmed.to_string());
+                    }
+                    line.clear();
+                    used = 0.0;
+                }
+            }
+            line.push_str(&ctext);
+            used += cadvance;
+        }
     }
-    lines.push(line);
+
+    let trimmed = line.trim_end();
+    if !trimmed.is_empty() || lines.is_empty() {
+        lines.push(trimmed.to_string());
+    }
+
     Ok(lines)
+}
+
+fn is_thai_leading_vowel(c: char) -> bool {
+    matches!(u32::from(c), 0x0E40..=0x0E44)
 }
 
 fn is_thai(c: char) -> bool {
