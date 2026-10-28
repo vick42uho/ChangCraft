@@ -152,8 +152,11 @@ pub fn japanese_glyph_from(face: &crate::CraftFont, ch: char) -> Result<GlyphOut
     let Some(gid) = font.charmap().map(ch) else { return Err(GlyphError::Missing) };
     let advances = font.glyph_metrics(Size::unscaled(), loc);
     let width = advances.advance_width(gid).unwrap_or(0.0) as f64 * scale;
-    if !width.is_finite() || width <= 0.0 || width > 2.0 {
+    if !width.is_finite() || !(0.0..=8.0).contains(&width) {
         return Err(GlyphError::Missing);
+    }
+    if font.outline_glyphs().get(gid).is_none() {
+        return Ok(GlyphOutline { contours: Vec::new(), width, bbox: [0.0, 0.0, width, 0.0] });
     }
     bounded_outline(&font, gid, width)
 }
