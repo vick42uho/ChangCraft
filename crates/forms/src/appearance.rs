@@ -214,9 +214,12 @@ fn dr_font(doc: &Document, name: &str) -> Option<(Object, FontText)> {
     match fd.name(b"Subtype") {
         Some(b"Type1" | b"TrueType" | b"MMType1") => {}
         // Japanese, Chinese and Korean forms: a CID font addressed by Unicode (a non-embedded
-        // `/HeiseiMin-W3` with `/UniJIS-UCS2-H`, say). Embedded CMap streams and Identity-H need
-        // the font's own mapping, so those still fall back to Helvetica.
-        Some(b"Type0") => return Some((entry, FontText::Unicode(UnicodeCMap::from_name(fd.name(b"Encoding")?)?))),
+        // `/HeiseiMin-W3` with `/UniJIS-UCS2-H`, say). Fonts with /ToUnicode map through Metrics.
+        Some(b"Type0") => {
+            if let Some(cmap) = fd.name(b"Encoding").and_then(UnicodeCMap::from_name) {
+                return Some((entry, FontText::Unicode(cmap)));
+            }
+        }
         _ => return None,
     }
     // Symbolic fonts (ZapfDingbats, Symbol) can't show WinAnsi text.

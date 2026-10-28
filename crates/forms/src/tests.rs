@@ -688,6 +688,32 @@ fn japanese_choices_use_the_unicode_cid_font() {
     assert!(need_appearances(&doc));
 }
 
+#[test]
+fn thai_field_uses_composite_font_with_tounicode() {
+    let objs: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R /AcroForm 4 0 R >>".into(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 600 800] >>".into(),
+        "<< /Type /Page /Parent 2 0 R /Annots [7 0 R] >>".into(),
+        "<< /Fields [7 0 R] /DA (/Helv 0 Tf 0 g) /DR << /Font << /Helv 5 0 R /Thai 6 0 R >> >> >>".into(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".into(),
+        "<< /Type /Font /Subtype /Type0 /BaseFont /Garuda /Encoding /Identity-H /DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Garuda /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> >>] /ToUnicode /Identity-H >>".into(),
+        "<< /Type /Annot /Subtype /Widget /FT /Tx /T (thainame) /DA (/Thai 12 Tf 0 g) /Rect [50 700 200 720] /P 3 0 R >>".into(),
+    ];
+    let mut doc = document(&objs);
+    set_value(&mut doc, "thainame", &FieldValue::Text("สวัสดี".into())).unwrap();
+    let doc = reopen(&doc);
+    let all = fields(&doc);
+    assert_eq!(field(&all, "thainame").value, ["สวัสดี"]);
+    let w = &field(&all, "thainame").widgets[0];
+    let n = doc.get(w.obj).as_dict().unwrap().get(b"AP").unwrap().as_dict().unwrap().reference(b"N").unwrap();
+    let Object::Stream(s) = &*doc.get(n) else { panic!() };
+    let stream_text = String::from_utf8_lossy(&s.decoded().unwrap()).into_owned();
+    assert!(stream_text.contains("/Thai 12 Tf"), "{stream_text}");
+    assert!(!stream_text.contains("/Helv"), "{stream_text}");
+    assert!(!stream_text.contains("(?)"), "should not have fallback '?'");
+    assert_eq!(undrawn_fields(&doc), []);
+}
+
 /// Text a field's font can't hold is kept, as Acrobat keeps it: the value is stored as typed, the
 /// appearance draws `?` for those characters, the widget is marked with the first one, and the
 /// form asks other viewers to redraw it (`/NeedAppearances`). Drawable text clears the mark.

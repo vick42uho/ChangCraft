@@ -87,6 +87,18 @@ pub fn wrap(text: &str, size: f64, width: f64) -> Vec<String> {
     wrap_with(text, size, width, helvetica_width)
 }
 
+fn is_thai_combining_or_no_start(c: char) -> bool {
+    matches!(
+        c,
+        '\u{0e31}' | '\u{0e34}'..='\u{0e3a}' | '\u{0e47}'..='\u{0e4e}'
+        | '\u{0e46}' | '\u{0e2f}' | '\u{0e4f}' | '\u{0e5a}' | '\u{0e5b}'
+    )
+}
+
+fn is_thai_leading_vowel(c: char) -> bool {
+    matches!(c, '\u{0e40}'..='\u{0e44}')
+}
+
 /// [`wrap`], measuring with `measure` (for example [`cjk_width`]).
 pub fn wrap_with(text: &str, size: f64, width: f64, measure: impl Fn(&str, f64) -> f64) -> Vec<String> {
     let mut lines = Vec::new();
@@ -110,6 +122,19 @@ pub fn wrap_with(text: &str, size: f64, width: f64, measure: impl Fn(&str, f64) 
             }
             for ch in word.chars() {
                 if !line.is_empty() && measure(&format!("{line}{ch}"), size) > width {
+                    if is_thai_combining_or_no_start(ch) {
+                        line.push(ch);
+                        continue;
+                    }
+                    if line.chars().count() > 1
+                        && line.chars().last().is_some_and(is_thai_leading_vowel)
+                        && let Some(last) = line.pop()
+                    {
+                        lines.push(std::mem::take(&mut line));
+                        line.push(last);
+                        line.push(ch);
+                        continue;
+                    }
                     lines.push(std::mem::take(&mut line));
                 }
                 line.push(ch);
@@ -441,5 +466,19 @@ mod tests {
         assert_eq!(cjk_width("A", 10.0), helvetica_width("A", 10.0));
         let lines = wrap_with("日本語のテキストは文字単位で折り返されます", 10.0, 45.0, cjk_width);
         assert!(lines.len() > 3 && lines.iter().all(|l| cjk_width(l, 10.0) <= 45.0), "{lines:?}");
+
+        let thai_text = "สวัสดีเพื่อนรักทุกคน";
+        let thai_lines = wrap_with(thai_text, 10.0, 30.0, |s, _| s.chars().count() as f64 * 10.0);
+        assert!(thai_lines.len() >= 2);
+        for line in &thai_lines {
+            if let Some(first) = line.chars().next() {
+                assert!(!is_thai_combining_or_no_start(first), "Line started with combining or kinsoku mark: {line}");
+            }
+        }
+        for (i, line) in thai_lines.iter().enumerate() {
+            if i + 1 < thai_lines.len() {
+                assert!(!line.chars().last().is_some_and(is_thai_leading_vowel), "Line ended with stranded leading vowel: {line}");
+            }
+        }
     }
 }
