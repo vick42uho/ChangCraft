@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 
 pub use pdfcraft_fonts::helvetica_width;
 
+pub mod typhoon;
+
 /// The model files, as named in ATTRIBUTION.toml.
 pub const DETECTION_MODEL: &str = "text-detection.rten";
 pub const RECOGNITION_MODEL: &str = "text-recognition.rten";
@@ -24,7 +26,7 @@ pub const RECOGNITION_MODEL: &str = "text-recognition.rten";
 pub const ALPHABET: &str = " 0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~€ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 /// The languages the models read (ISO 639-1); all use the Latin alphabet without accents.
-pub const LANGUAGES: &[(&str, &str)] = &[("en", "English")];
+pub const LANGUAGES: &[(&str, &str)] = &[("en", "English"), ("th", "Thai / ภาษาไทย (Typhoon OCR)")];
 
 #[derive(Debug, thiserror::Error)]
 pub enum OcrError {
@@ -233,10 +235,20 @@ pub fn text_layer(words: &[PlacedWord]) -> Vec<u8> {
         let o = [w.origin[0] - em[0] * bottom, w.origin[1] - em[1] * bottom];
         let m = [ax[0], ax[1], em[0], em[1], o[0], o[1]];
         let nums: Vec<String> = m.iter().map(|v| num(*v)).collect();
+        let is_ascii_latin = pdfcraft_fonts::first_undrawable(&w.text).is_none();
+        if !is_ascii_latin {
+            let actual = pdfcraft_cos::PdfString::text(&w.text);
+            out.extend_from_slice(b"/Span << /ActualText ");
+            out.extend(pdfcraft_fonts::literal(&actual.bytes));
+            out.extend_from_slice(b" >> BDC\n");
+        }
         out.extend_from_slice(nums.join(" ").as_bytes());
         out.extend_from_slice(b" Tm ");
         out.extend(pdfcraft_fonts::literal(&pdfcraft_fonts::win_ansi(&w.text)));
         out.extend_from_slice(b" Tj\n");
+        if !is_ascii_latin {
+            out.extend_from_slice(b"EMC\n");
+        }
     }
     out.extend_from_slice(b"ET\nQ\nEMC\n");
     out

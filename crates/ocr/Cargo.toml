@@ -12,6 +12,12 @@ workspace = true
 
 [dependencies]
 pdfcraft-fonts = { workspace = true }
+pdfcraft-cos = { workspace = true }
 ocrs = { version = "0.13.1", default-features = false, features = ["rten"] }
 rten = { version = "0.26.0", default-features = false, features = ["rten_format"] }
 thiserror.workspace = true
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+ureq = { version = "3.4", default-features = false, features = ["rustls-no-provider", "_ring"] }
+rustls-native-certs = "0.8"
+serde_json = { workspace = true }

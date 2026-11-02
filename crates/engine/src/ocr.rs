@@ -130,7 +130,11 @@ impl OcrJob {
                 out.push(skip(&e));
                 continue;
             }
-            let lines = match ocr.recognize(&shot.rgba, shot.width, shot.height) {
+            let lines = match if self.settings.language.starts_with("th") {
+                pdfcraft_ocr::typhoon::recognize_typhoon(&shot.rgba, shot.width, shot.height, None)
+            } else {
+                ocr.recognize(&shot.rgba, shot.width, shot.height)
+            } {
                 Ok(l) => l,
                 Err(e) => {
                     out.push(skip(&e.to_string()));

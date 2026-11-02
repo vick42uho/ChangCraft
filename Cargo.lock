@@ -4220,10 +4220,16 @@ dependencies = [
 name = "pdfcraft-ocr"
 version = "0.11.0"
 dependencies = [
+ "base64 0.22.1",
+ "image",
  "ocrs",
+ "pdfcraft-cos",
  "pdfcraft-fonts",
  "rten",
+ "rustls-native-certs",
+ "serde_json",
  "thiserror 2.0.21",
+ "ureq",
 ]
 
 [[package]]

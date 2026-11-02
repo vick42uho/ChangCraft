@@ -1219,7 +1219,7 @@
 	Applied 1 redaction mark. Save to remove the content from the file.	ปิดทับตามเครื่องหมายแล้ว 1 จุด บันทึกเพื่อเอาเนื้อหาออกจากไฟล์
 	Applied {n} redaction marks. Save to remove the content from the file.	ปิดทับตามเครื่องหมายแล้ว {n} จุด บันทึกเพื่อเอาเนื้อหาออกจากไฟล์
 	JavaScript Console	คอนโซล JavaScript
-	JavaScript is turned off (Preferences ▸ JavaScript).	JavaScript ปิดอยู่ (การตั้งค่า ▸ JavaScript)
+	JavaScript is turned off (Preferences ▸ JavaScript).	JavaScript ปิดอยู่ (การตั้งค่า > JavaScript)
 	Output appears here.	ผลลัพธ์จะแสดงที่นี่
 	Script Name:	ชื่อสคริปต์:
 	This document has no document-level scripts.	เอกสารนี้ไม่มีสคริปต์ระดับเอกสาร
