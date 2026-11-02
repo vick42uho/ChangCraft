@@ -348,6 +348,11 @@ fn shape_source(
             return Ok(Some((bytes, shaped, family)));
         }
     }
+    if let Some(face) = pdfcraft_fonts::embedding::matching_faces(&family).into_iter().find(|f| pdfcraft_fonts::embedding::covers(f.bytes, text))
+        && let Ok(shaped) = pdfcraft_fonts::source_shaping::shape(face.bytes, text)
+    {
+        return Ok(Some((face.bytes.to_vec(), shaped, family)));
+    }
     Err(EditError::Invalid("complex text needs the complete source TrueType/OpenType face; load that font before editing".into()))
 }
 
@@ -547,13 +552,58 @@ pub(super) fn rewrite_styled_block(
     let mut programs: HashMap<String, Option<std::sync::Arc<Vec<u8>>>> = HashMap::new();
     for (range, index) in styled_spans {
         let source = lines.get(index).unwrap_or(first);
-        for ch in draft.get(range).unwrap_or_default().chars() {
+        let span_text = draft.get(range).unwrap_or_default();
+        let span_font = if let Some(resource) = overrides.get(&index).and_then(|r| r.resource.as_ref()).or(style.resource.as_ref()) {
+            if !metrics.get(resource).is_some_and(|m| source_encodes(m, span_text)) {
+                return Err(EditError::Invalid(format!("the selected font resource {resource} cannot show text")));
+            }
+            Some(resource.clone())
+        } else if pdfcraft_fonts::source_shaping::required(span_text) {
+            let face = pdfcraft_fonts::embedding::matching_faces(&source.base_font)
+                .into_iter()
+                .find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text))
+                .or_else(|| {
+                    if span_text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')) {
+                        pdfcraft_fonts::embedding::matching_faces("sarabun")
+                            .into_iter()
+                            .find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text))
+                    } else {
+                        None
+                    }
+                });
+            if let Some(face) = face {
+                let key = face.name();
+                if let Some(name) = full_faces.get(&key) {
+                    Some(name.clone())
+                } else {
+                    let name = pdfcraft_fonts::embedding::embed(doc, &mut fonts, face.bytes, face.family).map_err(EditError::Invalid)?;
+                    let font = fonts
+                        .get(name.as_bytes())
+                        .and_then(|f| doc.dict(f))
+                        .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+                    metrics.insert(name.clone(), Metrics::from_dict(doc, &font));
+                    full_faces.insert(key, name.clone());
+                    Some(name)
+                }
+            } else if metrics.get(&source.font).is_some_and(|m| source_encodes(m, span_text)) {
+                Some(source.font.clone())
+            } else {
+                None
+            }
+        } else if metrics.get(&source.font).is_some_and(|m| source_encodes(m, span_text)) {
+            Some(source.font.clone())
+        } else {
+            None
+        };
+        for ch in span_text.chars() {
             if ch == '\n' {
-                chars.push((ch, index, source.font.clone()));
+                chars.push((ch, index, span_font.clone().unwrap_or_else(|| source.font.clone())));
                 continue;
             }
             let s = ch.to_string();
-            let name = if let Some(resource) = overrides.get(&index).and_then(|r| r.resource.as_ref()).or(style.resource.as_ref()) {
+            let name = if let Some(f) = &span_font {
+                f.clone()
+            } else if let Some(resource) = overrides.get(&index).and_then(|r| r.resource.as_ref()).or(style.resource.as_ref()) {
                 if !metrics.get(resource).is_some_and(|m| source_encodes(m, &s)) {
                     return Err(EditError::Invalid(format!("the selected font resource {resource} cannot show U+{:04X}", u32::from(ch))));
                 }

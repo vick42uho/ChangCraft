@@ -23,7 +23,12 @@ pub fn matching_faces(name: &str) -> Vec<&'static crate::CraftFont> {
 
 /// Whether a complete font program can show every non-newline character.
 pub fn covers(bytes: &[u8], text: &str) -> bool {
-    FontRef::new(bytes).is_ok_and(|f| text.chars().all(|c| matches!(c, '\n' | '\r') || f.charmap().map(c).is_some_and(|g| g.to_u32() != 0)))
+    FontRef::new(bytes).is_ok_and(|f| {
+        text.chars().all(|c| {
+            matches!(c, '\n' | '\r' | '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}' | '\u{00AD}')
+                || f.charmap().map(c).is_some_and(|g| g.to_u32() != 0)
+        })
+    })
 }
 
 /// Names come from the program, never a caller's guessed family.

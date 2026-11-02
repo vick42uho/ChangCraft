@@ -912,6 +912,8 @@ impl Metrics {
                 let len = self.code_len.clamp(1, 4);
                 out.extend_from_slice(&b1[4 - len..]);
                 out.extend_from_slice(&b2[4 - len..]);
+            } else if matches!(ch, '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}') {
+                // Zero-width formatting characters emit no glyph codes in content streams.
             } else {
                 return None;
             }

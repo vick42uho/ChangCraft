@@ -2689,7 +2689,9 @@ fn rewrite_block_from(
             || style.resource.is_some()
             || (text.is_some_and(|draft| {
                 draft.contains('\n')
-                    || pdfcraft_fonts::source_shaping::required(draft)
+                    || (pdfcraft_fonts::source_shaping::required(draft)
+                        && (source_program(doc, &fonts_res, &first.font).is_some_and(|b| pdfcraft_fonts::embedding::covers(&b, draft))
+                            || !pdfcraft_fonts::embedding::matching_faces(&b.base_font).is_empty()))
                     || !pdfcraft_fonts::embedding::matching_faces(&b.base_font).is_empty()
             }) || registered_face
                 || text.is_some_and(|draft| source_program_completes(doc, &fonts_res, first, draft))
