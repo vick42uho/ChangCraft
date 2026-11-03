@@ -529,6 +529,18 @@ pub fn artcraft_mark(ui: &mut egui::Ui, size: f32) -> Response {
     )
 }
 
+/// The ChangCraft app icon (Thai elephant), `size` points square.
+pub fn app_icon_image(ui: &mut egui::Ui, size: f32) -> Response {
+    ui.add(
+        egui::Image::from_bytes(
+            "bytes://changcraft-icon.png",
+            include_bytes!("../../../assets/app-icon/hicolor/256x256/apps/ai.storyteller.pdfcraft.png"),
+        )
+        .fit_to_exact_size(vec2(size, size))
+        .alt_text("ChangCraft"),
+    )
+}
+
 /// Buttons for every community link (`pdfcraft_engine::links`), Discord first and prominent.
 /// Returns the registry command of the one clicked.
 pub fn community_links(ui: &mut egui::Ui) -> Option<&'static str> {

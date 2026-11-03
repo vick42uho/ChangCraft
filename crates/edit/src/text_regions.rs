@@ -570,17 +570,45 @@ pub(super) fn rewrite_styled_block(
         let source = lines.get(index).unwrap_or(first);
         let span_text = draft.get(range).unwrap_or_default();
         let span_font = if let Some(resource) = overrides.get(&index).and_then(|r| r.resource.as_ref()).or(style.resource.as_ref()) {
-            if !metrics.get(resource).is_some_and(|m| source_encodes(m, span_text)) {
-                return Err(EditError::Invalid(format!("the selected font resource {resource} cannot show text")));
+            if metrics.get(resource).is_some_and(|m| source_encodes(m, span_text)) {
+                Some(resource.clone())
+            } else {
+                // If the selected resource is a subset that cannot encode the new text (or is shaped/Thai),
+                // fall back to embedding the matching full face instead of returning an error.
+                let base = metrics.get(resource).map(|m| m.base_font.as_str()).unwrap_or(resource.as_str());
+                let matching = pdfcraft_fonts::embedding::matching_faces(base);
+                let face = matching.into_iter().find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text));
+                if let Some(face) = face {
+                    let key = face.name();
+                    if let Some(name) = full_faces.get(&key) {
+                        Some(name.clone())
+                    } else {
+                        let name = pdfcraft_fonts::embedding::embed(doc, &mut fonts, face.bytes, face.family).map_err(EditError::Invalid)?;
+                        let font = fonts
+                            .get(name.as_bytes())
+                            .and_then(|f| doc.dict(f))
+                            .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+                        metrics.insert(name.clone(), Metrics::from_dict(doc, &font));
+                        full_faces.insert(key, name.clone());
+                        Some(name)
+                    }
+                } else {
+                    return Err(EditError::Invalid(format!("the selected font resource {resource} cannot show text")));
+                }
             }
-            Some(resource.clone())
         } else if pdfcraft_fonts::source_shaping::required(span_text) {
-            let face = pdfcraft_fonts::embedding::matching_faces(&source.base_font)
+            let font_query = if source.bold && !source.base_font.to_ascii_lowercase().contains("bold") {
+                format!("{}-Bold", source.base_font)
+            } else {
+                source.base_font.clone()
+            };
+            let face = pdfcraft_fonts::embedding::matching_faces(&font_query)
                 .into_iter()
                 .find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text))
                 .or_else(|| {
                     if span_text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')) {
-                        pdfcraft_fonts::embedding::matching_faces("sarabun")
+                        let fallback_query = if source.bold { "sarabun-bold" } else { "sarabun" };
+                        pdfcraft_fonts::embedding::matching_faces(fallback_query)
                             .into_iter()
                             .find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text))
                     } else {

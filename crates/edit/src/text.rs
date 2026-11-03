@@ -1814,6 +1814,23 @@ fn source_family(base_font: &str) -> crate::added::Family {
         && ["times", "serif", "roman", "mincho", "cambria", "georgia", "palatino", "garamond"].iter().any(|s| name.contains(s))
     {
         crate::added::Family::Times
+    } else if name.contains("notosansthai") {
+        crate::added::Family::NotoSansThai
+    } else if name.contains("ibmplex") {
+        crate::added::Family::IBMPlexSansThai
+    } else if name.contains("thai")
+        || name.contains("sarabun")
+        || name.contains("angsana")
+        || name.contains("cordia")
+        || name.contains("dillenia")
+        || name.contains("browallia")
+        || name.contains("freesia")
+        || name.contains("iris")
+        || name.contains("jasmine")
+        || name.contains("kodchiang")
+        || name.contains("lily")
+    {
+        crate::added::Family::Sarabun
     } else {
         crate::added::Family::Helvetica
     }

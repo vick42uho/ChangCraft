@@ -32,6 +32,20 @@ pub use shaping::{
 };
 pub use std14::Std14;
 
+/// Clean up subset prefixes (e.g. `ABCDEF+Sarabun` or `BAAAAASarabun-Bold`) into human-readable face names.
+pub fn clean_face_name(raw: &str) -> String {
+    let name = raw.rsplit('+').next().unwrap_or(raw);
+    let name = if name.len() > 6
+        && name[..6].chars().all(|c| c.is_ascii_uppercase())
+        && name.chars().nth(6).is_some_and(|c| c.is_ascii_uppercase() || c == '-')
+    {
+        &name[6..]
+    } else {
+        name
+    };
+    name.replace('-', " ")
+}
+
 /// Normalise Windows Thai PUA characters (0xF700..=0xF71C) used by Windows print drivers
 /// and legacy PDF generators into standard Unicode Thai (U+0E00..=U+0E7F).
 pub fn normalize_thai_pua(text: &str) -> Cow<'_, str> {
@@ -515,6 +529,23 @@ mod tests {
             if i + 1 < thai_lines.len() {
                 assert!(!line.chars().last().is_some_and(is_thai_leading_vowel), "Line ended with stranded leading vowel: {line}");
             }
+        }
+    }
+
+    #[test]
+    fn clean_face_name_and_matching_faces_style() {
+        assert_eq!(clean_face_name("BAAAAASarabun-Bold"), "Sarabun Bold");
+        assert_eq!(clean_face_name("AAAAAASarabun-Regular"), "Sarabun Regular");
+        assert_eq!(clean_face_name("XYZABC+Sarabun-Bold"), "Sarabun Bold");
+        assert_eq!(clean_face_name("Sarabun"), "Sarabun");
+
+        let bold_matches = embedding::matching_faces("BAAAAASarabun-Bold");
+        if !bold_matches.is_empty() {
+            assert!(bold_matches[0].style.contains("Bold"), "Expected Bold to be first, got: {}", bold_matches[0].style);
+        }
+        let reg_matches = embedding::matching_faces("AAAAAASarabun-Regular");
+        if !reg_matches.is_empty() {
+            assert!(!reg_matches[0].style.contains("Bold"), "Expected Regular to be first, got: {}", reg_matches[0].style);
         }
     }
 }

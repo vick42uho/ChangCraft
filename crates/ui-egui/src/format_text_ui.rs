@@ -85,8 +85,13 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, look: &mut AddedText, extras:
                 if ui.selectable_label(false, tl!("Keep source fonts")).clicked() {
                     out.font = Some(FontChoice::KeepSource);
                 }
+                let mut seen = std::collections::HashSet::new();
                 for (resource, face) in sources.iter().filter(|(r, _)| !r.starts_with("PCApproved")) {
-                    if ui.selectable_label(false, face).clicked() {
+                    let clean = pdfcraft_fonts::clean_face_name(face);
+                    if !seen.insert(clean.clone()) {
+                        continue;
+                    }
+                    if ui.selectable_label(false, &clean).clicked() {
                         out.font = Some(FontChoice::Resource(resource.clone()));
                     }
                 }
@@ -94,8 +99,11 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, look: &mut AddedText, extras:
                 if !thai_approved.is_empty() {
                     ui.separator();
                     for (resource, face) in thai_approved {
-                        let clean_face = face.replace("NotoSansThai-", "Noto Sans Thai ").replace("Sarabun-", "Sarabun ");
-                        if ui.selectable_label(false, &clean_face).clicked() {
+                        let clean = pdfcraft_fonts::clean_face_name(face);
+                        if !seen.insert(clean.clone()) {
+                            continue;
+                        }
+                        if ui.selectable_label(false, &clean).clicked() {
                             out.font = Some(FontChoice::Resource(resource.clone()));
                         }
                     }

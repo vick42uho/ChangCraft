@@ -277,18 +277,14 @@ impl LineEditor {
     /// instead, or the paragraph's own font (its `/BaseFont` without the subset tag).
     pub(crate) fn font_shown(&self, sources: &[(String, String)]) -> String {
         if let Some(face) = self.font_resource.as_ref().and_then(|r| sources.iter().find(|(res, _)| res == r)).map(|(_, face)| face) {
-            return face.clone();
+            return pdfcraft_fonts::clean_face_name(face);
         }
         if self.look.family != self.look0.family || self.family_chosen {
             return self.look.family.label().to_string();
         }
         let base = self.source.as_ref().map(|(block, _)| block.base_font.as_str()).unwrap_or_default();
-        // "ABCDEF+Calibri" is a subset of Calibri.
-        let name = match base.split_once('+') {
-            Some((tag, rest)) if tag.len() == 6 && tag.bytes().all(|b| b.is_ascii_uppercase()) => rest,
-            _ => base,
-        };
-        if name.is_empty() { tl!("Keep source fonts").to_string() } else { name.to_string() }
+        let name = pdfcraft_fonts::clean_face_name(base);
+        if name.is_empty() { tl!("Keep source fonts").to_string() } else { name }
     }
 
     /// Back to the paragraph's own font: no page font chosen and the family it started with.

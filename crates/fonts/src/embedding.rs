@@ -31,6 +31,8 @@ pub fn face_key(name: &str) -> String {
         "sarabun".to_string()
     } else if raw.contains("notosansthai") {
         "notosansthai".to_string()
+    } else if raw.contains("ibmplex") {
+        "ibmplex".to_string()
     } else {
         raw
     }
@@ -39,6 +41,14 @@ pub fn face_key(name: &str) -> String {
 /// Full, approved faces of the source family. This never silently selects another family.
 pub fn matching_faces(name: &str) -> Vec<&'static crate::CraftFont> {
     let key = face_key(name);
+    let name_lower = name.to_ascii_lowercase();
+    let is_bold = name_lower.contains("bold")
+        || name_lower.contains("black")
+        || name_lower.contains("heavy")
+        || name_lower.contains("semibold")
+        || name_lower.contains("demi");
+    let is_italic = name_lower.contains("italic") || name_lower.contains("oblique");
+
     let mut matches: Vec<&'static crate::CraftFont> = crate::CRAFT_FONTS
         .iter()
         .filter(|f| {
@@ -53,11 +63,11 @@ pub fn matching_faces(name: &str) -> Vec<&'static crate::CraftFont> {
             matches.extend(crate::ui_thai_fonts().iter().filter(|f| f.family.to_ascii_lowercase().contains("sarabun")));
         } else if key == "notosansthai" || key.starts_with("notosansthai") {
             matches.extend(crate::ui_thai_fonts().iter().filter(|f| f.family.to_ascii_lowercase().contains("notosansthai")));
+        } else if key == "ibmplex" || key.starts_with("ibmplex") {
+            matches.extend(crate::ui_thai_fonts().iter().filter(|f| f.family.to_ascii_lowercase().contains("ibmplex")));
         }
     }
 
-    let is_bold = key.contains("bold");
-    let is_italic = key.contains("italic") || key.contains("oblique");
     matches.sort_by_key(|f| {
         let style_bold = f.style.to_ascii_lowercase().contains("bold");
         let style_italic = f.style.to_ascii_lowercase().contains("italic");

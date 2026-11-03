@@ -1177,11 +1177,11 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
                     2 => crate::credits::models_ui(ui),
                     _ => {
                         ui.horizontal(|ui| {
-                            widgets::artcraft_mark(ui, 40.0);
+                            widgets::app_icon_image(ui, 48.0);
                             ui.vertical(|ui| {
                                 ui.label(egui::RichText::new("ChangCraft (Thai Edition)").font(theme::semibold(20.0)));
                                 ui.label(crate::i18n::fmt(tl!("Version {v}"), &[("v", &pdfcraft_engine::build_info::version())]));
-                                ui.label(egui::RichText::new(tl!("ผลิตโดย Wick")).color(t.text_muted));
+                                ui.label(egui::RichText::new("พัฒนาต่อยอดรองรับภาษาไทยโดย Wick").color(t.text_muted));
                             });
                         });
                         ui.add_space(6.0);
