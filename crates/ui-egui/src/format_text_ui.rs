@@ -114,6 +114,9 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, look: &mut AddedText, extras:
             if ui.selectable_label(look.family == FontFamily::NotoSansThai, "Noto Sans Thai").clicked() {
                 out.font = Some(FontChoice::Family(FontFamily::NotoSansThai));
             }
+            if ui.selectable_label(look.family == FontFamily::IBMPlexSansThai, "IBM Plex Sans Thai").clicked() {
+                out.font = Some(FontChoice::Family(FontFamily::IBMPlexSansThai));
+            }
             ui.separator();
             if ui.selectable_label(false, tl!("Load font…")).clicked() {
                 out.font = Some(FontChoice::Load);

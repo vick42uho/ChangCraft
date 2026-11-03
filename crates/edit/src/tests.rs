@@ -3335,6 +3335,18 @@ fn page_text_the_standard_fonts_cant_draw_is_refused() {
     assert!(add_watermark(&mut doc, &[0], &wm, true).unwrap_err().to_string().contains("U+673A"));
     let after: Vec<Vec<String>> = (0..3).map(|p| streams(&reopen(&doc), p)).collect();
     assert_eq!(before, after, "a refused edit changes nothing");
+    // Thai watermark and header/footer succeed with Sarabun / Thai font
+    if pdfcraft_fonts::document_thai_font().is_some() {
+        let mut thai_doc = fixture();
+        let thai_wm = Watermark { text: "ลับเฉพาะ".into(), font: Family::Sarabun, ..Watermark::default() };
+        assert!(add_watermark(&mut thai_doc, &[0], &thai_wm, true).is_ok());
+        let thai_hf = HeaderFooter {
+            text: ["หน้า 1".into(), "ลับมาก".into(), String::new(), String::new(), String::new(), String::new()],
+            font: Family::Sarabun,
+            ..HeaderFooter::default()
+        };
+        assert!(add_header_footer(&mut thai_doc, &[0], &thai_hf, true, &cx()).is_ok());
+    }
     // Western European text, including what only WinAnsi (not Latin-1) has, still works.
     let text = AddedText { rect: [72.0, 600.0, 300.0, 700.0], text: "Café — 5€ ™".into(), ..AddedText::default() };
     add_content(&mut doc, 0, &Content::Text(text.clone())).unwrap();

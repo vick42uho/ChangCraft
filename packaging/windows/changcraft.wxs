@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ChangCraft MSI (WiX Toolset v5/v7). Built for side-by-side coexistence with PdfCraft.
+  Producer: Wick
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="ChangCraft"
+      Manufacturer="Wick"
+      Version="$(var.Version)"
+      UpgradeCode="DD3BC44B-6E91-45B6-B1D0-B08BB41AEC1F"
+      Scope="perMachine"
+      Compressed="yes"
+      Language="1033">
+    <SummaryInformation Description="ChangCraft PDF workbench (Thai Edition)" Manufacturer="Wick" />
+    <Launch Condition="ALLUSERS = 1 OR (Installed AND REMOVE = &quot;ALL&quot;)"
+        Message="ChangCraft must be installed for all users. Run setup with administrator privileges and ALLUSERS=1; per-user installation is not supported." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of ChangCraft is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="ChangcraftIcon.ico" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="ChangcraftIcon.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/storytold/pdfcraft" />
+
+    <Property Id="INSTALLDESKTOPSHORTCUT" Secure="yes" />
+    <Property Id="EXISTINGDESKTOPSHORTCUT">
+      <DirectorySearch Id="DesktopSearch" Path="[DesktopFolder]" Depth="0">
+        <FileSearch Name="ChangCraft.lnk" />
+      </DirectorySearch>
+    </Property>
+    <SetProperty Id="INSTALLDESKTOPSHORTCUT" Value="1" After="AppSearch" Sequence="first"
+        Condition="NOT INSTALLDESKTOPSHORTCUT AND (NOT WIX_UPGRADE_DETECTED OR EXISTINGDESKTOPSHORTCUT)" />
+
+    <Property Id="INSTALLPDFCONTEXTMENU" Secure="yes" />
+    <Property Id="EXISTINGPDFCONTEXTMENU">
+      <RegistrySearch Id="PdfContextMenuSearch" Root="HKLM" Key="Software\Classes\SystemFileAssociations\.pdf\shell\ChangCraft.Edit" Type="raw" />
+    </Property>
+    <SetProperty Id="INSTALLPDFCONTEXTMENU" Value="1" After="AppSearch" Sequence="first"
+        Condition="NOT INSTALLPDFCONTEXTMENU AND EXISTINGPDFCONTEXTMENU" />
+
+    <UIRef Id="ChangcraftInstallerUI" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="ChangCraft">
+        <Directory Id="ModelsFolder" Name="models" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Main" Title="ChangCraft" Level="1">
+      <ComponentGroupRef Id="ChangcraftFiles" />
+      <ComponentGroupRef Id="ChangcraftModels" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="ChangcraftFiles" Directory="INSTALLFOLDER">
+      <Component Id="ChangcraftApp" Guid="DBAB95D2-F8B6-43D5-A5B5-EBA3DF82F6CD">
+        <File Id="ChangcraftExe" Source="$(var.BinDir)\changcraft.exe" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\changcraft.exe" Value="[#ChangcraftExe]" Type="string" />
+
+        <RegistryValue Root="HKLM" Key="Software\Classes\ChangCraft.Document" Value="PDF Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\ChangCraft.Document\DefaultIcon" Value="&quot;[#ChangcraftExe]&quot;,0" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\ChangCraft.Document\shell\open\command" Value="&quot;[#ChangcraftExe]&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.pdf\OpenWithProgids" Name="ChangCraft.Document" Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\changcraft.exe" Name="FriendlyAppName" Value="ChangCraft (Thai Edition)" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\changcraft.exe\DefaultIcon" Value="&quot;[#ChangcraftExe]&quot;,0" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\changcraft.exe\SupportedTypes" Name=".pdf" Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\changcraft.exe\shell\open\command" Value="&quot;[#ChangcraftExe]&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\ChangCraft\Capabilities" Name="ApplicationName" Value="ChangCraft" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\ChangCraft\Capabilities" Name="ApplicationDescription" Value="ChangCraft PDF workbench (Thai Edition)" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\ChangCraft\Capabilities" Name="ApplicationIcon" Value="[#ChangcraftExe],0" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\ChangCraft\Capabilities\FileAssociations" Name=".pdf" Value="ChangCraft.Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\RegisteredApplications" Name="ChangCraft" Value="Software\ChangCraft\Capabilities" Type="string" />
+      </Component>
+
+      <Component Id="ChangcraftStartMenuShortcut" Directory="ProgramMenuFolder" Guid="3B964B9F-1BBF-45B8-A39A-B62773A684CF">
+        <Shortcut Id="StartMenuShortcut" Name="ChangCraft" Description="ChangCraft PDF workbench (Thai Edition)"
+            Target="[#ChangcraftExe]" WorkingDirectory="INSTALLFOLDER" Icon="ChangcraftIcon.ico" IconIndex="0" />
+        <RegistryValue Root="HKLM" Key="Software\ChangCraft\Shortcuts" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <Component Id="ChangcraftDesktopShortcut" Directory="DesktopFolder" Guid="E56FC64E-D271-44FD-B151-CA4A8535E389"
+          Condition="INSTALLDESKTOPSHORTCUT = 1">
+        <Shortcut Id="DesktopShortcut" Name="ChangCraft" Description="ChangCraft PDF workbench (Thai Edition)"
+            Target="[#ChangcraftExe]" WorkingDirectory="INSTALLFOLDER" Icon="ChangcraftIcon.ico" IconIndex="0" />
+        <RegistryValue Root="HKLM" Key="Software\ChangCraft\Shortcuts" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <Component Id="ChangcraftPdfContextMenu" Guid="8D85D12A-A4E7-4312-94F7-CAB6759471D0"
+          Condition="INSTALLPDFCONTEXTMENU = 1">
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.pdf\shell\ChangCraft.Edit" Value="Edit with ChangCraft" Type="string" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.pdf\shell\ChangCraft.Edit" Name="Icon" Value="&quot;[#ChangcraftExe]&quot;,0" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.pdf\shell\ChangCraft.Edit" Name="MultiSelectModel" Value="Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.pdf\shell\ChangCraft.Edit\command" Value="&quot;[#ChangcraftExe]&quot; &quot;%1&quot;" Type="string" />
+      </Component>
+
+      <Component Id="ChangcraftCli" Guid="E5C983BA-4420-41EE-B0D4-54EEC619941A">
+        <File Id="ChangcraftCliExe" Source="$(var.BinDir)\pdfcraft-cli.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="ChangcraftDocumentIconLicense" Guid="D4AC50C0-9BDE-4D3B-BD9A-0082B3071EEA">
+        <File Id="ChangcraftDocumentIconLicenseFile" Source="$(var.BinDir)\LICENSE-document.txt" KeyPath="yes" />
+      </Component>
+      <Component Id="ChangcraftMitLicense" Guid="97EC08E4-DA96-4167-9D57-F1D0083180B2">
+        <File Id="ChangcraftMitLicenseFile" Source="$(var.BinDir)\LICENSE-MIT" KeyPath="yes" />
+      </Component>
+      <Component Id="ChangcraftApacheLicense" Guid="0815EB1F-0A8F-45B1-A295-9713146C9050">
+        <File Id="ChangcraftApacheLicenseFile" Source="$(var.BinDir)\LICENSE-APACHE" KeyPath="yes" />
+      </Component>
+      <Component Id="ChangcraftNotice" Guid="72D91A54-8B58-45FA-9B7C-D3F37248C5EF">
+        <File Id="ChangcraftNoticeFile" Source="$(var.BinDir)\NOTICE" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="ChangcraftModels" Directory="ModelsFolder">
+      <Files Include="$(var.ModelsDir)\*" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>

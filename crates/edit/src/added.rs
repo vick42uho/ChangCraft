@@ -28,6 +28,7 @@ pub enum Family {
     Courier,
     Sarabun,
     NotoSansThai,
+    IBMPlexSansThai,
 }
 
 impl Family {
@@ -38,6 +39,7 @@ impl Family {
             Family::Courier => "Courier",
             Family::Sarabun => "Sarabun (สารบรรณ)",
             Family::NotoSansThai => "Noto Sans Thai",
+            Family::IBMPlexSansThai => "IBM Plex Sans Thai",
         }
     }
 
@@ -52,6 +54,10 @@ impl Family {
             (Family::NotoSansThai, true, false) => "NotoSansThai-Bold",
             (Family::NotoSansThai, false, true) => "NotoSansThai-Italic",
             (Family::NotoSansThai, true, true) => "NotoSansThai-BoldItalic",
+            (Family::IBMPlexSansThai, false, false) => "IBMPlexSansThai",
+            (Family::IBMPlexSansThai, true, false) => "IBMPlexSansThai-Bold",
+            (Family::IBMPlexSansThai, false, true) => "IBMPlexSansThai-Italic",
+            (Family::IBMPlexSansThai, true, true) => "IBMPlexSansThai-BoldItalic",
             (Family::Helvetica, false, false) => "Helvetica",
             (Family::Helvetica, true, false) => "Helvetica-Bold",
             (Family::Helvetica, false, true) => "Helvetica-Oblique",
@@ -92,6 +98,7 @@ impl Family {
         if s.chars().any(is_thai) {
             let script = match self {
                 Family::NotoSansThai => ShapedScript::ThaiNoto,
+                Family::IBMPlexSansThai => ShapedScript::ThaiIBMPlex,
                 _ => ShapedScript::Thai,
             };
             if let Ok(clusters) = pdfcraft_fonts::shape_script(s, false, script) {
@@ -104,10 +111,10 @@ impl Family {
     /// The standard-14 face this family means at the given style.
     pub fn std14(self, bold: bool, italic: bool) -> Std14 {
         match (self, bold, italic) {
-            (Family::Sarabun | Family::NotoSansThai, false, false) => Std14::Helvetica,
-            (Family::Sarabun | Family::NotoSansThai, true, false) => Std14::HelveticaBold,
-            (Family::Sarabun | Family::NotoSansThai, false, true) => Std14::HelveticaOblique,
-            (Family::Sarabun | Family::NotoSansThai, true, true) => Std14::HelveticaBoldOblique,
+            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai, false, false) => Std14::Helvetica,
+            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai, true, false) => Std14::HelveticaBold,
+            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai, false, true) => Std14::HelveticaOblique,
+            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai, true, true) => Std14::HelveticaBoldOblique,
             (Family::Courier, false, false) => Std14::Courier,
             (Family::Courier, true, false) => Std14::CourierBold,
             (Family::Courier, false, true) => Std14::CourierOblique,
@@ -479,7 +486,11 @@ pub fn first_undrawable(t: &AddedText) -> Option<char> {
 fn shaped_by_a_face(t: &AddedText) -> bool {
     (pdfcraft_fonts::document_arabic_font().is_some() && t.text.chars().any(is_arabic))
         || (pdfcraft_fonts::document_hebrew_font(false).is_some() && t.text.chars().any(is_hebrew))
-        || (pdfcraft_fonts::document_thai_font().is_some() && (t.family == Family::Sarabun || t.family == Family::NotoSansThai || t.text.chars().any(is_thai)))
+        || (pdfcraft_fonts::document_thai_font().is_some()
+            && (t.family == Family::Sarabun
+                || t.family == Family::NotoSansThai
+                || t.family == Family::IBMPlexSansThai
+                || t.text.chars().any(is_thai)))
 }
 
 /// An Arabic character the face shapes and draws (U+061C, a direction mark, is dropped).
@@ -561,11 +572,13 @@ fn shaped_layout(t: &AddedText, line: &str, rtl: bool) -> Result<(Vec<Piece>, f6
                     ShapedScript::Thai => {
                         let actual_script = match t.family {
                             Family::NotoSansThai => ShapedScript::ThaiNoto,
+                            Family::IBMPlexSansThai => ShapedScript::ThaiIBMPlex,
                             _ => ShapedScript::Thai,
                         };
                         pdfcraft_fonts::shape_script(&s, false, actual_script).map_err(|e| thai_error(e, &s))?
                     }
                     ShapedScript::ThaiNoto => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiNoto).map_err(|e| thai_error(e, &s))?,
+                    ShapedScript::ThaiIBMPlex => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiIBMPlex).map_err(|e| thai_error(e, &s))?,
                 };
                 Piece::Shaped(shaped)
             } else if run_rtl {
@@ -691,7 +704,7 @@ fn draw_laid_shaped(
                 entry.insert(outline(c.script, *id).map_err(|e| match c.script {
                     ShapedScript::Arabic => arabic_error(e, &c.text),
                     ShapedScript::Hebrew => hebrew_error(e, &c.text),
-                    ShapedScript::Thai | ShapedScript::ThaiNoto => thai_error(e, &c.text),
+                    ShapedScript::Thai | ShapedScript::ThaiNoto | ShapedScript::ThaiIBMPlex => thai_error(e, &c.text),
                 })?);
             }
         }
@@ -833,6 +846,7 @@ fn type3_shaped(doc: &mut Document, clusters: &[&ShapedCluster], outlines: &Hash
                 ShapedScript::Hebrew => "Hebrew",
                 ShapedScript::Thai => "Thai",
                 ShapedScript::ThaiNoto => "Noto Sans Thai",
+                ShapedScript::ThaiIBMPlex => "IBM Plex Sans Thai",
             },
             |f| f.family,
         ),

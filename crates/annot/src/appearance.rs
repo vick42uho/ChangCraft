@@ -751,7 +751,8 @@ pub fn build(d: &Dict) -> Option<Stream> {
             let q = d.int(b"Q").unwrap_or(0);
             if text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')) && pdfcraft_fonts::document_thai_font().is_some() {
                 c.push_str(&rg(text_color));
-                let mut y = rect[3] - pad - size * 0.85;
+                // Lower baseline slightly to guarantee top marks like ธิ์ in บุญฤทธิ์ are never clipped
+                let mut y = rect[3] - pad - size * 1.0;
                 for line in text.split('\n') {
                     if y < rect[1] - size {
                         break;

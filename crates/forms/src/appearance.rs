@@ -489,23 +489,64 @@ pub fn field_appearance_drawn(doc: &Document, f: &Field, w: &Widget, values: &[S
         Some((o, enc)) => (da.font.clone(), o, enc),
         None => ("Helv".to_string(), helvetica(), FontText::WinAnsi),
     };
-    let width_of = |text: &str, size: f64| enc.width(text, size);
+    let has_thai = text.chars().any(|c| matches!(u32::from(c), 0x0E00..=0x0E7F | 0xF700..=0xF71C)) && pdfcraft_fonts::document_thai_font().is_some();
+    let thai_width = |t: &str, sz: f64| -> f64 {
+        let norm = pdfcraft_fonts::normalize_thai_pua(t);
+        if let Ok(clusters) = pdfcraft_fonts::shape_thai(&norm) {
+            clusters.iter().map(|c| c.advance * sz).sum()
+        } else {
+            enc.width(t, sz)
+        }
+    };
+    let width_of = |text: &str, size: f64| if has_thai { thai_width(text, size) } else { enc.width(text, size) };
     let (mut c, bw) = frame(doc, &wd, width, height);
     let pad = 2.0 + bw;
     let inner_w = (width - 2.0 * pad).max(1.0);
     let q = wd.get(b"Q").and_then(|o| doc.resolve(o).as_int()).unwrap_or(f.quadding);
+    let mut size = da.size;
     let mut body: Vec<u8> = Vec::new();
     // The first character drawn that the font can't hold (drawn as `?`), for the caller to report.
     let mut unencodable: Option<char> = None;
-    let mut show = |body: &mut Vec<u8>, x: f64, y: f64, text: &str| {
+    let mut show = |body: &mut Vec<u8>, x: f64, y: f64, text: &str, sz: f64| {
         // A line break in a single-line value is a space, as in viewers (multiline text is split).
         let text: String = text.chars().map(|c| if matches!(c, '\n' | '\r') { ' ' } else { c }).collect();
-        if unencodable.is_none() {
-            unencodable = enc.first_unencodable(&text);
+        if has_thai {
+            let norm = pdfcraft_fonts::normalize_thai_pua(&text);
+            if let Ok(clusters) = pdfcraft_fonts::shape_thai(&norm) {
+                let mut cur_x = x;
+                for cluster in clusters {
+                    for (gid, pos) in &cluster.glyphs {
+                        if let Ok(outline) = pdfcraft_fonts::shaped_glyph(pdfcraft_fonts::ShapedScript::Thai, *gid) {
+                            let gx = cur_x + pos[0] * sz;
+                            let gy = y + pos[1] * sz;
+                            let mut has_points = false;
+                            for contour in &outline.contours {
+                                for (i, pt) in contour.iter().enumerate() {
+                                    let px = gx + pt[0] * sz;
+                                    let py = gy + pt[1] * sz;
+                                    body.extend(format!("{} {} {}\n", n(px), n(py), if i == 0 { "m" } else { "l" }).bytes());
+                                    has_points = true;
+                                }
+                                if contour.len() >= 3 {
+                                    body.extend_from_slice(b"h\n");
+                                }
+                            }
+                            if has_points {
+                                body.extend_from_slice(b"f*\n");
+                            }
+                        }
+                    }
+                    cur_x += cluster.advance * sz;
+                }
+            }
+        } else {
+            if unencodable.is_none() {
+                unencodable = enc.first_unencodable(&text);
+            }
+            body.extend(format!("1 0 0 1 {} {} Tm ", n(x), n(y)).bytes());
+            body.extend(literal(&enc.encode(&text)));
+            body.extend_from_slice(b" Tj\n");
         }
-        body.extend(format!("1 0 0 1 {} {} Tm ", n(x), n(y)).bytes());
-        body.extend(literal(&enc.encode(&text)));
-        body.extend_from_slice(b" Tj\n");
     };
     let x_for = |text: &str, size: f64| -> f64 {
         let tw = width_of(text, size);
@@ -515,7 +556,6 @@ pub fn field_appearance_drawn(doc: &Document, f: &Field, w: &Widget, values: &[S
             _ => pad,
         }
     };
-    let mut size = da.size;
     match f.kind {
         FieldKind::List => {
             // Every option, one per line from the top (from `/TI`); selected ones highlighted.
@@ -531,7 +571,7 @@ pub fn field_appearance_drawn(doc: &Document, f: &Field, w: &Widget, values: &[S
                 if values.contains(export) {
                     c.push_str(&format!("0.6 0.75 0.86 rg\n{} {} {} {} re f\n", n(bw), n(y - line), n(width - 2.0 * bw), n(line)));
                 }
-                show(&mut body, pad, y - line + size * 0.25, display);
+                show(&mut body, pad, y - line + size * 0.25, display, size);
                 y -= line;
             }
         }
@@ -546,7 +586,7 @@ pub fn field_appearance_drawn(doc: &Document, f: &Field, w: &Widget, values: &[S
                     if y < -size {
                         break;
                     }
-                    show(&mut body, x_for(&line, size), y, &line);
+                    show(&mut body, x_for(&line, size), y, &line, size);
                     y -= size * 1.15;
                 }
             } else {
@@ -565,10 +605,10 @@ pub fn field_appearance_drawn(doc: &Document, f: &Field, w: &Widget, values: &[S
                     let cell = width / cells as f64;
                     for (i, ch) in text.chars().take(cells).enumerate() {
                         let s = ch.to_string();
-                        show(&mut body, cell * i as f64 + (cell - width_of(&s, size)) / 2.0, y, &s);
+                        show(&mut body, cell * i as f64 + (cell - width_of(&s, size)) / 2.0, y, &s, size);
                     }
                 } else {
-                    show(&mut body, x_for(&text, size), y, &text);
+                    show(&mut body, x_for(&text, size), y, &text, size);
                 }
             }
         }
@@ -576,19 +616,35 @@ pub fn field_appearance_drawn(doc: &Document, f: &Field, w: &Widget, values: &[S
     // Acrobat regenerates only what is inside /Tx BMC when it redraws a field (e.g. on focus
     // changes), discarding what came before it (issues #1613, #633). The background and border
     // therefore go inside the marked-content block too, so a redraw keeps them with the text.
-    let mut content = format!(
-        "/Tx BMC\nq\n{c}{} {} {} {} re W n\nBT\n/{} {} Tf\n{}\n",
-        n(bw),
-        n(bw),
-        n(width - 2.0 * bw),
-        n(height - 2.0 * bw),
-        font_name,
-        n(size),
-        da.color
-    )
-    .into_bytes();
+    let mut content = if has_thai {
+        format!(
+            "/Tx BMC\nq\n{c}{} {} {} {} re W n\n{}\n",
+            n(bw),
+            n(0.0),
+            n(width - 2.0 * bw),
+            n(height),
+            da.color
+        )
+        .into_bytes()
+    } else {
+        format!(
+            "/Tx BMC\nq\n{c}{} {} {} {} re W n\nBT\n/{} {} Tf\n{}\n",
+            n(bw),
+            n(bw),
+            n(width - 2.0 * bw),
+            n(height - 2.0 * bw),
+            font_name,
+            n(size),
+            da.color
+        )
+        .into_bytes()
+    };
     content.extend(body);
-    content.extend_from_slice(b"ET\nQ\nEMC\n");
+    if has_thai {
+        content.extend_from_slice(b"Q\nEMC\n");
+    } else {
+        content.extend_from_slice(b"ET\nQ\nEMC\n");
+    }
     let mut fonts = Dict::new();
     fonts.set(font_name.into_bytes(), font_obj);
     let mut res = Dict::new();

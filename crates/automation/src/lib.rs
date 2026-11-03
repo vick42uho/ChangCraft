@@ -1314,8 +1314,11 @@ impl Automation {
                     None | Some("Helvetica") => pdfcraft_engine::FontFamily::Helvetica,
                     Some("Times") => pdfcraft_engine::FontFamily::Times,
                     Some("Courier") => pdfcraft_engine::FontFamily::Courier,
+                    Some("Sarabun") => pdfcraft_engine::FontFamily::Sarabun,
+                    Some("NotoSansThai") => pdfcraft_engine::FontFamily::NotoSansThai,
+                    Some("IBMPlexSansThai") => pdfcraft_engine::FontFamily::IBMPlexSansThai,
                     Some(other) => {
-                        return Err(ToolError::InvalidArgs(format!("font must be \"Helvetica\", \"Times\" or \"Courier\", not {other:?}")));
+                        return Err(ToolError::InvalidArgs(format!("unrecognized font: {other:?}")));
                     }
                 };
                 hf.color = color("color", hf.color)?;
@@ -1336,9 +1339,18 @@ impl Automation {
                     Some(_) => a.opt_str("text")?.unwrap_or_default().to_string(),
                     None => a.str("text")?.to_string(),
                 };
+                let font = match a.opt_str("font")? {
+                    Some("Sarabun" | "sarabun") => pdfcraft_engine::FontFamily::Sarabun,
+                    Some("NotoSansThai" | "noto" | "noto_sans_thai") => pdfcraft_engine::FontFamily::NotoSansThai,
+                    Some("IBMPlexSansThai" | "ibm_plex" | "ibm_plex_sans_thai") => pdfcraft_engine::FontFamily::IBMPlexSansThai,
+                    Some("Times" | "times") => pdfcraft_engine::FontFamily::Times,
+                    Some("Courier" | "courier") => pdfcraft_engine::FontFamily::Courier,
+                    _ => d.font,
+                };
                 let wm = Watermark {
                     text,
                     source: None,
+                    font,
                     scale: a.opt_num("scale")?.unwrap_or(d.scale).clamp(0.01, 1.0),
                     font_size: a.opt_num("font_size")?.unwrap_or(0.0),
                     color: color("color", d.color)?,
