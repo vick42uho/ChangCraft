@@ -247,7 +247,12 @@ impl MoveBackground {
 
 /// Text style for new text (the panel's Format controls set it).
 pub fn default_style() -> AddedText {
-    AddedText { size: 12.0, ..AddedText::default() }
+    let family = if crate::i18n::current().code() == "th" {
+        pdfcraft_engine::FontFamily::Sarabun
+    } else {
+        pdfcraft_engine::FontFamily::Helvetica
+    };
+    AddedText { size: 12.0, family, ..AddedText::default() }
 }
 
 /// Display-space rect → screen.

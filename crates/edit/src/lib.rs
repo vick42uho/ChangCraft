@@ -765,6 +765,8 @@ pub fn add_header_footer(doc: &mut Document, pages: &[usize], hf: &HeaderFooter,
             added::Family::Helvetica => "PCHelv",
             added::Family::Times => "PCTimes",
             added::Family::Courier => "PCCour",
+            added::Family::Sarabun => "PCSarabun",
+            added::Family::NotoSansThai => "PCNotoThai",
         };
         let base = hf.font.base_font(false, false);
         let resource = free_font_name(doc, &page_fonts(doc, page), preferred, base);

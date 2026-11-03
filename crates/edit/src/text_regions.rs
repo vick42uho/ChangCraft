@@ -299,10 +299,11 @@ fn group_layout(lines: &[TextLine], mixed: bool) -> Vec<TextBlock> {
                 row_text.push(' ');
                 block.editor_text.push(' ');
             }
+            let norm_line = pdfcraft_fonts::normalize_thai_pua(&line.text);
             let start = block.editor_text.len();
-            block.editor_text.push_str(&line.text);
+            block.editor_text.push_str(&norm_line);
             block.spans.push((start..block.editor_text.len(), index));
-            row_text.push_str(&line.text);
+            row_text.push_str(&norm_line);
             block.invisible &= line.origin.state.render_mode == 3;
             block.lines.push(index);
         }
@@ -327,6 +328,8 @@ fn shape_source(
     name: &str,
     text: &str,
 ) -> Result<Option<(Vec<u8>, pdfcraft_fonts::source_shaping::ShapedRun, String)>, EditError> {
+    let norm = pdfcraft_fonts::normalize_thai_pua(text);
+    let text = norm.as_ref();
     if !pdfcraft_fonts::source_shaping::required(text) {
         return Ok(None);
     }
@@ -352,6 +355,19 @@ fn shape_source(
         && let Ok(shaped) = pdfcraft_fonts::source_shaping::shape(face.bytes, text)
     {
         return Ok(Some((face.bytes.to_vec(), shaped, family)));
+    }
+    if text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')) {
+        let is_bold = family.to_ascii_lowercase().contains("bold");
+        let thai_faces = pdfcraft_fonts::ui_thai_fonts();
+        if let Some(face) = thai_faces
+            .iter()
+            .find(|f| (if is_bold { f.style == "Bold" } else { f.style == "Regular" }) && pdfcraft_fonts::embedding::covers(f.bytes, text))
+            .or_else(|| thai_faces.iter().find(|f| pdfcraft_fonts::embedding::covers(f.bytes, text)))
+        {
+            if let Ok(shaped) = pdfcraft_fonts::source_shaping::shape(face.bytes, text) {
+                return Ok(Some((face.bytes.to_vec(), shaped, face.name())));
+            }
+        }
     }
     Err(EditError::Invalid("complex text needs the complete source TrueType/OpenType face; load that font before editing".into()))
 }

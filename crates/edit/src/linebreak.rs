@@ -41,6 +41,7 @@ fn no_start(c: char) -> bool {
         | '｡' | '｣' | '､' | '･' | 'ｰ' | 'ﾞ' | 'ﾟ'
         | '\u{ff67}'..='\u{ff6f}' // small half-width katakana
         | 'ๆ' | 'ฯ' | '๏' | '๚' | '๛' // Thai punctuation (Maiyamok, Paiyannoi, Angkhankhu, Khomut)
+        | '\u{0E30}'..='\u{0E3A}' | '\u{0E47}'..='\u{0E4E}' // Thai vowels and tone marks
     )
 }
 
@@ -49,7 +50,9 @@ fn no_start(c: char) -> bool {
 fn no_end(c: char) -> bool {
     matches!(
         c,
-        '(' | '['
+        '\u{0E40}'..='\u{0E44}' // Thai leading vowels (Sara E, Ae, O, Ai, Faimai)
+            | '('
+            | '['
             | '{'
             | '«'
             | '‘'

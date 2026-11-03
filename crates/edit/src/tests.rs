@@ -3705,6 +3705,33 @@ fn added_thai_text_wraps_clusters_and_survives_reopen() {
 }
 
 #[test]
+fn thai_font_switching_between_sarabun_and_noto_sans_thai() {
+    if pdfcraft_fonts::document_thai_font().is_none() {
+        return;
+    }
+    let mut doc = fixture();
+    let sarabun = AddedText {
+        rect: [20.0, 100.0, 250.0, 300.0],
+        text: "สวัสดี".into(),
+        family: super::added::Family::Sarabun,
+        size: 16.0,
+        ..AddedText::default()
+    };
+    add_content(&mut doc, 0, &Content::Text(sarabun.clone())).unwrap();
+    let noto = AddedText {
+        family: super::added::Family::NotoSansThai,
+        ..sarabun.clone()
+    };
+    update_content(&mut doc, 0, 0, &Content::Text(noto.clone())).unwrap();
+    let reopened = reopen(&doc);
+    let item = &list_added(&reopened)[0].content;
+    match item {
+        Content::Text(t) => assert_eq!(t.family, super::added::Family::NotoSansThai),
+        _ => panic!("expected text"),
+    }
+}
+
+#[test]
 fn group_moves_preserve_glyph_bytes_and_unselected_text_state() {
     for content in [
         "BT /F1 12 Tf 1.3 Tc 2 Tw 80 Tz 14 TL 1 0.2 -0.1 1 50 600 Tm (A\\101) Tj 1 0 0 rg (Neighbour) Tj T* (Next) Tj ET",

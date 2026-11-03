@@ -7,6 +7,8 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+use std::borrow::Cow;
+
 mod craft;
 pub mod embedding;
 mod encodings;
@@ -19,16 +21,50 @@ mod std14;
 mod std14_metrics;
 pub use craft::{
     CRAFT_FONTS, CraftFont, SHIPPORI_MINCHO, document_arabic_font, document_devanagari_font, document_hebrew_font, document_japanese_font,
-    document_japanese_font_for_style, document_japanese_fonts_for_style, document_latin_fonts, document_thai_font, ui_arabic_fonts, ui_chinese_fonts,
-    ui_cjk_fonts, ui_devanagari_fonts, ui_hebrew_fonts, ui_japanese_fonts, ui_telugu_fonts, ui_thai_fonts,
+    document_japanese_font_for_style, document_japanese_fonts_for_style, document_latin_fonts, document_thai_font, document_thai_font_named,
+    ui_arabic_fonts, ui_chinese_fonts, ui_cjk_fonts, ui_devanagari_fonts, ui_hebrew_fonts, ui_japanese_fonts, ui_telugu_fonts, ui_thai_fonts,
 };
 pub use script::{
     GlyphError, GlyphOutline, INTER_REGULAR, MAX_SIGNATURE_CHARS, ScriptOutline, japanese_glyph, japanese_glyph_from, script_missing, script_outline,
 };
 pub use shaping::{
-    ShapedCluster, ShapedScript, arabic_glyph, arabic_has, hebrew_has, shape_arabic, shape_hebrew, shape_thai, shaped_glyph, thai_has,
+    ShapedCluster, ShapedScript, arabic_glyph, arabic_has, hebrew_has, shape_arabic, shape_hebrew, shape_script, shape_thai, shaped_glyph, thai_has,
 };
 pub use std14::Std14;
+
+/// Normalise Windows Thai PUA characters (0xF700..=0xF71C) used by Windows print drivers
+/// and legacy PDF generators into standard Unicode Thai (U+0E00..=U+0E7F).
+pub fn normalize_thai_pua(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(|c| matches!(c as u32, 0xF700..=0xF71C)) {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        let mapped = match c as u32 {
+            0xF700 | 0xF705 | 0xF70A => '\u{0E48}', // Mai Ek
+            0xF701 | 0xF706 | 0xF70B => '\u{0E49}', // Mai Tho
+            0xF702 | 0xF707 | 0xF70C => '\u{0E4A}', // Mai Tri
+            0xF703 | 0xF708 | 0xF70D => '\u{0E4B}', // Mai Chattawa
+            0xF704 | 0xF709 | 0xF70E => '\u{0E4C}', // Thanthakhat (Karan)
+            0xF70F | 0xF710 => '\u{0E31}',          // Mai Han-Akat
+            0xF711 => '\u{0E33}',                   // Sara Am
+            0xF712 => '\u{0E4D}',                   // Nikhahit
+            0xF713 => '\u{0E34}',                   // Sara I
+            0xF714 => '\u{0E35}',                   // Sara Ii
+            0xF715 => '\u{0E36}',                   // Sara Ue
+            0xF716 => '\u{0E37}',                   // Sara Uee
+            0xF717 => '\u{0E4E}',                   // Yamakkan
+            0xF718 => '\u{0E38}',                   // Sara U
+            0xF719 => '\u{0E39}',                   // Sara Uu
+            0xF71A => '\u{0E3A}',                   // Phinthu
+            0xF71B => '\u{0E0D}',                   // Yo Ying without tail
+            0xF71C => '\u{0E10}',                   // Tho Than without tail
+            _ => c,
+        };
+        out.push(mapped);
+    }
+    Cow::Owned(out)
+}
 
 /// Advance of `s` in Helvetica at `size` points, using the exact standard-14 metrics.
 ///

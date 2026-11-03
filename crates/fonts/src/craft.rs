@@ -66,13 +66,20 @@ pub fn ui_telugu_fonts() -> Vec<&'static CraftFont> {
     CRAFT_FONTS.iter().filter(|f| f.covers("Telu")).collect()
 }
 
-/// Thai faces shared by the interface and PDF text writer.
+/// Thai faces shared by the interface and PDF text writer. Sarabun is prioritized first
+/// as the standard Thai typeface for documents.
 pub fn ui_thai_fonts() -> Vec<&'static CraftFont> {
-    CRAFT_FONTS.iter().filter(|f| f.covers("Thai")).collect()
+    let mut fonts: Vec<&CraftFont> = CRAFT_FONTS.iter().filter(|f| f.covers("Thai")).collect();
+    fonts.sort_by_key(|f| f.family != "Sarabun");
+    fonts
 }
 
 pub fn document_thai_font() -> Option<&'static CraftFont> {
     ui_thai_fonts().into_iter().next()
+}
+
+pub fn document_thai_font_named(family: &str) -> Option<&'static CraftFont> {
+    CRAFT_FONTS.iter().filter(|f| f.covers("Thai")).find(|f| f.family.eq_ignore_ascii_case(family))
 }
 
 /// The `Deva` craft-fonts faces for Devanagari interface text (the Hindi catalog, file names,

@@ -283,7 +283,15 @@ fn text_turn(d: &Dict) -> i64 {
 pub fn undrawable_text(d: &Dict) -> Option<(&'static str, char)> {
     let text = |key: &[u8]| d.get(key).and_then(Object::as_string).map(PdfString::to_text);
     let (what, text) = match d.name(b"Subtype")? {
-        b"FreeText" => ("the comment's text", text(b"Contents")?),
+        b"FreeText" => {
+            let t = text(b"Contents")?;
+            let t = pdfcraft_fonts::normalize_thai_pua(&t).into_owned();
+            if t.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')) && pdfcraft_fonts::document_thai_font().is_some() {
+                let missing = t.chars().find(|c| !matches!(c, '\n' | '\r' | '\u{0E00}'..='\u{0E7F}') && !pdfcraft_fonts::win_ansi_encodable(*c));
+                return missing.map(|c| ("the comment's text", c));
+            }
+            ("the comment's text", t)
+        }
         b"Line" | b"PolyLine" | b"Polygon" => ("the measurement label", text(b"PCMeasureValue")?),
         b"Stamp" if matches!(d.get(b"PCStamp"), Some(Object::Bool(true))) => ("the stamp's \"By\" line", text(b"PCByLine")?),
         // Drawn in Helvetica when the redaction is applied: refused when it is marked.
@@ -736,10 +744,58 @@ pub fn build(d: &Dict) -> Option<Stream> {
                     n(rect[3] - rect[1] - bw)
                 ));
             }
-            let text = d.get(b"Contents").and_then(|o| o.as_string()).map(PdfString::to_text).unwrap_or_default();
+            let raw_text = d.get(b"Contents").and_then(|o| o.as_string()).map(PdfString::to_text).unwrap_or_default();
+            let text = pdfcraft_fonts::normalize_thai_pua(&raw_text).into_owned();
             let pad = 2.0 + bw;
             let width = (rect[2] - rect[0] - 2.0 * pad).max(1.0);
             let q = d.int(b"Q").unwrap_or(0);
+            if text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')) && pdfcraft_fonts::document_thai_font().is_some() {
+                c.push_str(&rg(text_color));
+                let mut y = rect[3] - pad - size * 0.85;
+                for line in text.split('\n') {
+                    if y < rect[1] - size {
+                        break;
+                    }
+                    if let Ok(clusters) = pdfcraft_fonts::shape_thai(line) {
+                        let total_w: f64 = clusters.iter().map(|cl| cl.advance * size).sum();
+                        let mut cur_x = match q {
+                            1 => rect[0] + pad + (width - total_w) / 2.0,
+                            2 => rect[2] - pad - total_w,
+                            _ => rect[0] + pad,
+                        };
+                        for cluster in clusters {
+                            for (gid, pos) in &cluster.glyphs {
+                                if let Ok(outline) = pdfcraft_fonts::shaped_glyph(pdfcraft_fonts::ShapedScript::Thai, *gid) {
+                                    let gx = cur_x + pos[0] * size;
+                                    let gy = y + pos[1] * size;
+                                    let mut has_points = false;
+                                    for contour in &outline.contours {
+                                        for (i, pt) in contour.iter().enumerate() {
+                                            let px = gx + pt[0] * size;
+                                            let py = gy + pt[1] * size;
+                                            c.push_str(&format!("{} {} {}\n", n(px), n(py), if i == 0 { "m" } else { "l" }));
+                                            has_points = true;
+                                        }
+                                        if contour.len() >= 3 {
+                                            c.push_str("h\n");
+                                        }
+                                    }
+                                    if has_points {
+                                        c.push_str("f*\n");
+                                    }
+                                }
+                            }
+                            cur_x += cluster.advance * size;
+                        }
+                    }
+                    y -= size * 1.2;
+                }
+                let mut stream = form(full, c.as_bytes(), res);
+                if let Some(m) = matrix {
+                    stream.dict.set(b"Matrix".to_vec(), Object::Array(m.iter().copied().map(Object::Real).collect()));
+                }
+                return Some(stream);
+            }
             c.push_str(&format!(
                 "{} {} {} {} re W n\nBT\n/Helv {} Tf\n{}",
                 n(rect[0]),

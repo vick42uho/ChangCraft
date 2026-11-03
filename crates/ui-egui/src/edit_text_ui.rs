@@ -1385,6 +1385,15 @@ pub(crate) fn install_source_fonts(ctx: &egui::Context, doc: &pdfcraft_engine::D
         if let Some(fallback) = definitions.families.get(&FontFamily::Proportional) {
             stack.extend(fallback.iter().cloned());
         }
+        let is_thai = program.face.to_ascii_lowercase().contains("thai")
+            || program.face.to_ascii_lowercase().contains("sarabun");
+        if is_thai {
+            for (res, fam_name) in &families {
+                if res.starts_with("PCApproved") && !stack.contains(fam_name) {
+                    stack.push(fam_name.clone());
+                }
+            }
+        }
         definitions.families.insert(FontFamily::Name(name.clone().into()), stack);
     }
     if !families.is_empty() {

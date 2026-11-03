@@ -503,6 +503,8 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
                 .color(t.text_muted),
         );
     });
+    ui.add_space(8.0);
+    crate::handwriting::preferences_section(ui, app, t);
 }
 
 /// The Preferences dialog's OK row. Returns `true` to close.

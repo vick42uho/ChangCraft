@@ -131,7 +131,13 @@ pub fn text_editor_fonts(doc: &Document, page: usize) -> Result<Vec<TextEditorFo
     // display newly inserted glyphs before Apply without changing the source text's face.
     let source_faces: Vec<_> = result.iter().map(|p| p.face.clone()).collect();
     for face in source_faces {
-        for full in pdfcraft_fonts::embedding::matching_faces(&face) {
+        let fulls = pdfcraft_fonts::embedding::matching_faces(&face);
+        let faces_to_try: Vec<&'static pdfcraft_fonts::CraftFont> = if fulls.is_empty() && (face.to_ascii_lowercase().contains("thai") || face.to_ascii_lowercase().contains("sarabun")) {
+            pdfcraft_fonts::ui_thai_fonts()
+        } else {
+            fulls
+        };
+        for full in faces_to_try {
             if full.bytes.len() > budget || result.iter().any(|p| p.resource == format!("PCApproved{}", full.name())) {
                 continue;
             }
@@ -1298,6 +1304,7 @@ pub fn text_lines(doc: &Document, page: usize) -> Result<Vec<TextLine>, EditErro
             s.text = crate::bidi::to_visual(&s.text);
             s.logical_order = false;
         }
+        s.text = pdfcraft_fonts::normalize_thai_pua(&s.text).into_owned();
         // A line belongs to one stream piece. Within it, PDF producers often put every word
         // in its own BT/ET: geometry and text state, not object boundaries, define a line.
         let si = ops.get(s.op).map_or(0, |op| pieces.pieces_of(op).0);
@@ -2689,6 +2696,7 @@ fn rewrite_block_from(
             || style.resource.is_some()
             || (text.is_some_and(|draft| {
                 draft.contains('\n')
+                    || draft.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}'))
                     || (pdfcraft_fonts::source_shaping::required(draft)
                         && (source_program(doc, &fonts_res, &first.font).is_some_and(|b| pdfcraft_fonts::embedding::covers(&b, draft))
                             || !pdfcraft_fonts::embedding::matching_faces(&b.base_font).is_empty()))

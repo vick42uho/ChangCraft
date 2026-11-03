@@ -114,6 +114,7 @@ pub use print_ui::{Handling as PrintHandling, OptionsSource, PrintDraft, Printer
 mod redact_ui;
 pub use redact_ui::{HiddenDraft, PagesDraft as RedactPagesDraft, RedactPrefs, SearchDraft as RedactSearchDraft, SearchMode as RedactSearchMode};
 pub mod i18n;
+pub mod handwriting;
 
 /// [`PdfCraftApp::date_text`] for callers that already borrow other parts of the app.
 pub(crate) fn date_text(session: &Session, fmt: Option<&str>) -> Result<String, String> {
@@ -512,6 +513,8 @@ pub struct PdfCraftApp {
     /// The Preferences ▸ Date format box while it's being edited, or while it holds an invalid
     /// pattern (the session keeps the last valid one).
     pub date_format_draft: Option<String>,
+    pub typhoon_key_draft: String,
+    pub typhoon_status: Option<String>,
     /// Explicit CLI/control mode lasts for this session and is never persisted.
     mode_override: Option<Mode>,
     pub left: LeftPanel,
@@ -943,6 +946,8 @@ impl PdfCraftApp {
             view_defaults: Default::default(),
             units: Default::default(),
             date_format_draft: None,
+            typhoon_key_draft: String::new(),
+            typhoon_status: None,
             mode_override: None,
             left: LeftPanel::AllTools,
             docking: docking::Workspace::default(),

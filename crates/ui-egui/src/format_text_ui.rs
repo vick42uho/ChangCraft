@@ -90,6 +90,16 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, look: &mut AddedText, extras:
                         out.font = Some(FontChoice::Resource(resource.clone()));
                     }
                 }
+                let thai_approved: Vec<_> = sources.iter().filter(|(r, _)| r.starts_with("PCApprovedThai")).collect();
+                if !thai_approved.is_empty() {
+                    ui.separator();
+                    for (resource, face) in thai_approved {
+                        let clean_face = face.replace("NotoSansThai-", "Noto Sans Thai ").replace("Sarabun-", "Sarabun ");
+                        if ui.selectable_label(false, &clean_face).clicked() {
+                            out.font = Some(FontChoice::Resource(resource.clone()));
+                        }
+                    }
+                }
                 ui.separator();
             }
             for f in [FontFamily::Helvetica, FontFamily::Times, FontFamily::Courier] {
@@ -97,29 +107,34 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, look: &mut AddedText, extras:
                     out.font = Some(FontChoice::Family(f));
                 }
             }
-            if fonts.sources.is_some() {
-                ui.separator();
-                if ui.selectable_label(false, tl!("Load font…")).clicked() {
-                    out.font = Some(FontChoice::Load);
+            ui.separator();
+            if ui.selectable_label(look.family == FontFamily::Sarabun, "Sarabun (สารบรรณ)").clicked() {
+                out.font = Some(FontChoice::Family(FontFamily::Sarabun));
+            }
+            if ui.selectable_label(look.family == FontFamily::NotoSansThai, "Noto Sans Thai").clicked() {
+                out.font = Some(FontChoice::Family(FontFamily::NotoSansThai));
+            }
+            ui.separator();
+            if ui.selectable_label(false, tl!("Load font…")).clicked() {
+                out.font = Some(FontChoice::Load);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            ui.menu_button(tl!("Installed fonts…"), |ui| match crate::files::installed_font_files(ui.ctx()) {
+                Some(list) if list.is_empty() => {
+                    ui.label(tl!("No openly licensed document fonts found. Load a font file."));
                 }
-                #[cfg(not(target_arch = "wasm32"))]
-                ui.menu_button(tl!("Installed fonts…"), |ui| match crate::files::installed_font_files(ui.ctx()) {
-                    Some(list) if list.is_empty() => {
-                        ui.label(tl!("No openly licensed document fonts found. Load a font file."));
-                    }
-                    Some(list) => {
-                        for font in list {
-                            if ui.button(&font.face).clicked() {
-                                out.font = Some(FontChoice::Installed(font.path));
-                                ui.close();
-                            }
+                Some(list) => {
+                    for font in list {
+                        if ui.button(&font.face).clicked() {
+                            out.font = Some(FontChoice::Installed(font.path));
+                            ui.close();
                         }
                     }
-                    None => {
-                        ui.label(tl!("Finding document fonts…"));
-                    }
-                });
-            }
+                }
+                None => {
+                    ui.label(tl!("Finding document fonts…"));
+                }
+            });
         })
         .response
         .on_hover_text(format!("{}\n{}", tl!("Font"), tl!("Thai and Arabic use regular fallback fonts when available.")));

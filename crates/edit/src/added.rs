@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 use pdfcraft_cos::{Dict, Document, ObjRef, Object, PdfString, Stream};
 use pdfcraft_fonts::{
-    GlyphError, GlyphOutline, ShapedCluster, ShapedScript, Std14, literal, shape_arabic, shape_hebrew, shape_thai, shaped_glyph, win_ansi,
+    GlyphError, GlyphOutline, ShapedCluster, ShapedScript, Std14, literal, shape_arabic, shape_hebrew, shaped_glyph, win_ansi,
 };
 use unicode_bidi::{Level, ParagraphBidiInfo};
 
@@ -26,6 +26,8 @@ pub enum Family {
     Helvetica,
     Times,
     Courier,
+    Sarabun,
+    NotoSansThai,
 }
 
 impl Family {
@@ -34,12 +36,22 @@ impl Family {
             Family::Helvetica => "Helvetica",
             Family::Times => "Times",
             Family::Courier => "Courier",
+            Family::Sarabun => "Sarabun (สารบรรณ)",
+            Family::NotoSansThai => "Noto Sans Thai",
         }
     }
 
     /// The standard-14 font name for this family and style.
     pub fn base_font(self, bold: bool, italic: bool) -> &'static str {
         match (self, bold, italic) {
+            (Family::Sarabun, false, false) => "Sarabun",
+            (Family::Sarabun, true, false) => "Sarabun-Bold",
+            (Family::Sarabun, false, true) => "Sarabun-Italic",
+            (Family::Sarabun, true, true) => "Sarabun-BoldItalic",
+            (Family::NotoSansThai, false, false) => "NotoSansThai",
+            (Family::NotoSansThai, true, false) => "NotoSansThai-Bold",
+            (Family::NotoSansThai, false, true) => "NotoSansThai-Italic",
+            (Family::NotoSansThai, true, true) => "NotoSansThai-BoldItalic",
             (Family::Helvetica, false, false) => "Helvetica",
             (Family::Helvetica, true, false) => "Helvetica-Bold",
             (Family::Helvetica, false, true) => "Helvetica-Oblique",
@@ -57,7 +69,12 @@ impl Family {
 
     fn from_base(base: &[u8]) -> (Family, bool, bool) {
         let s = String::from_utf8_lossy(base);
-        let family = if s.starts_with("Times") {
+        let s_lower = s.to_ascii_lowercase();
+        let family = if s_lower.contains("notosansthai") || s_lower.contains("noto-sans-thai") {
+            Family::NotoSansThai
+        } else if s_lower.contains("sarabun") || s_lower.contains("angsana") {
+            Family::Sarabun
+        } else if s.starts_with("Times") {
             Family::Times
         } else if s.starts_with("Courier") {
             Family::Courier
@@ -72,12 +89,25 @@ impl Family {
     /// `italic` matters: the item is written out as the oblique/italic face (see [`Family::base_font`]),
     /// whose published widths differ from the upright face (Times-Italic `A` is 611, Times-Roman 722).
     pub fn width(self, s: &str, size: f64, bold: bool, italic: bool) -> f64 {
+        if s.chars().any(is_thai) {
+            let script = match self {
+                Family::NotoSansThai => ShapedScript::ThaiNoto,
+                _ => ShapedScript::Thai,
+            };
+            if let Ok(clusters) = pdfcraft_fonts::shape_script(s, false, script) {
+                return clusters.iter().map(|c| c.advance).sum::<f64>() * size;
+            }
+        }
         self.std14(bold, italic).text_width(s, size)
     }
 
     /// The standard-14 face this family means at the given style.
     pub fn std14(self, bold: bool, italic: bool) -> Std14 {
         match (self, bold, italic) {
+            (Family::Sarabun | Family::NotoSansThai, false, false) => Std14::Helvetica,
+            (Family::Sarabun | Family::NotoSansThai, true, false) => Std14::HelveticaBold,
+            (Family::Sarabun | Family::NotoSansThai, false, true) => Std14::HelveticaOblique,
+            (Family::Sarabun | Family::NotoSansThai, true, true) => Std14::HelveticaBoldOblique,
             (Family::Courier, false, false) => Std14::Courier,
             (Family::Courier, true, false) => Std14::CourierBold,
             (Family::Courier, false, true) => Std14::CourierOblique,
@@ -396,7 +426,7 @@ fn is_thai_leading_vowel(c: char) -> bool {
 }
 
 fn is_thai(c: char) -> bool {
-    matches!(u32::from(c), 0x0E00..=0x0E7F)
+    matches!(u32::from(c), 0x0E00..=0x0E7F | 0xF700..=0xF71C)
 }
 
 /// Arabic letters, marks, digits and punctuation: an item with any of them is shaped with the
@@ -444,11 +474,12 @@ pub fn first_undrawable(t: &AddedText) -> Option<char> {
     })
 }
 
-/// Whether `t` has Arabic or Hebrew that its craft-fonts face draws (so `draw` lays it out with
+/// Whether `t` has Arabic, Hebrew or Thai that its craft-fonts face draws (so `draw` lays it out with
 /// [`draw_shaped`]).
 fn shaped_by_a_face(t: &AddedText) -> bool {
     (pdfcraft_fonts::document_arabic_font().is_some() && t.text.chars().any(is_arabic))
         || (pdfcraft_fonts::document_hebrew_font(false).is_some() && t.text.chars().any(is_hebrew))
+        || (pdfcraft_fonts::document_thai_font().is_some() && (t.family == Family::Sarabun || t.family == Family::NotoSansThai || t.text.chars().any(is_thai)))
 }
 
 /// An Arabic character the face shapes and draws (U+061C, a direction mark, is dropped).
@@ -527,7 +558,14 @@ fn shaped_layout(t: &AddedText, line: &str, rtl: bool) -> Result<(Vec<Piece>, f6
                 let shaped = match script {
                     ShapedScript::Arabic => shape_arabic(&s, run_rtl).map_err(|e| arabic_error(e, &s))?,
                     ShapedScript::Hebrew => shape_hebrew(&s, run_rtl).map_err(|e| hebrew_error(e, &s))?,
-                    ShapedScript::Thai => shape_thai(&s).map_err(|e| thai_error(e, &s))?,
+                    ShapedScript::Thai => {
+                        let actual_script = match t.family {
+                            Family::NotoSansThai => ShapedScript::ThaiNoto,
+                            _ => ShapedScript::Thai,
+                        };
+                        pdfcraft_fonts::shape_script(&s, false, actual_script).map_err(|e| thai_error(e, &s))?
+                    }
+                    ShapedScript::ThaiNoto => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiNoto).map_err(|e| thai_error(e, &s))?,
                 };
                 Piece::Shaped(shaped)
             } else if run_rtl {
@@ -653,7 +691,7 @@ fn draw_laid_shaped(
                 entry.insert(outline(c.script, *id).map_err(|e| match c.script {
                     ShapedScript::Arabic => arabic_error(e, &c.text),
                     ShapedScript::Hebrew => hebrew_error(e, &c.text),
-                    ShapedScript::Thai => thai_error(e, &c.text),
+                    ShapedScript::Thai | ShapedScript::ThaiNoto => thai_error(e, &c.text),
                 })?);
             }
         }
@@ -794,6 +832,7 @@ fn type3_shaped(doc: &mut Document, clusters: &[&ShapedCluster], outlines: &Hash
                 ShapedScript::Arabic => "Arabic",
                 ShapedScript::Hebrew => "Hebrew",
                 ShapedScript::Thai => "Thai",
+                ShapedScript::ThaiNoto => "Noto Sans Thai",
             },
             |f| f.family,
         ),
@@ -856,7 +895,9 @@ fn draw(doc: &mut Document, c: &Content, view: [f64; 6], taken: &Dict, existing:
             let mut fonts = Dict::new();
             fonts.set(name.clone().into_bytes(), Object::Dict(font));
             let face_or_new = |has: fn(char) -> bool, face: bool| t.text.chars().any(has) && (face || !existing);
-            if t.text.chars().any(is_thai)
+            if t.family == Family::Sarabun
+                || t.family == Family::NotoSansThai
+                || t.text.chars().any(is_thai)
                 || face_or_new(is_arabic, pdfcraft_fonts::document_arabic_font().is_some())
                 || face_or_new(is_hebrew, pdfcraft_fonts::document_hebrew_font(false).is_some())
             {

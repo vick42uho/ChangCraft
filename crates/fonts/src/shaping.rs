@@ -28,6 +28,7 @@ pub enum ShapedScript {
     Arabic,
     Hebrew,
     Thai,
+    ThaiNoto,
 }
 
 impl ShapedScript {
@@ -35,7 +36,8 @@ impl ShapedScript {
         match self {
             Self::Arabic => crate::document_arabic_font(),
             Self::Hebrew => crate::document_hebrew_font(false),
-            Self::Thai => crate::document_thai_font(),
+            Self::Thai => crate::document_thai_font_named("Sarabun").or_else(crate::document_thai_font),
+            Self::ThaiNoto => crate::document_thai_font_named("Noto Sans Thai").or_else(crate::document_thai_font),
         }
     }
 }
@@ -44,10 +46,12 @@ fn face(script: ShapedScript) -> Option<&'static (FontRef<'static>, ShaperData)>
     static FACE: OnceLock<Option<(FontRef<'static>, ShaperData)>> = OnceLock::new();
     static HEBREW: OnceLock<Option<(FontRef<'static>, ShaperData)>> = OnceLock::new();
     static THAI: OnceLock<Option<(FontRef<'static>, ShaperData)>> = OnceLock::new();
+    static THAI_NOTO: OnceLock<Option<(FontRef<'static>, ShaperData)>> = OnceLock::new();
     let cache = match script {
         ShapedScript::Arabic => &FACE,
         ShapedScript::Hebrew => &HEBREW,
         ShapedScript::Thai => &THAI,
+        ShapedScript::ThaiNoto => &THAI_NOTO,
     };
     cache
         .get_or_init(|| {
@@ -83,6 +87,7 @@ pub fn shape_hebrew(text: &str, rtl: bool) -> Result<Vec<ShapedCluster>, GlyphEr
 
 pub fn thai_has(c: char) -> bool {
     face(ShapedScript::Thai).is_some_and(|(font, _)| font.charmap().map(c).is_some())
+        || face(ShapedScript::ThaiNoto).is_some_and(|(font, _)| font.charmap().map(c).is_some())
 }
 
 /// Shape Thai with grapheme clusters so Sara Am decomposition and stacked marks keep their
@@ -91,7 +96,7 @@ pub fn shape_thai(text: &str) -> Result<Vec<ShapedCluster>, GlyphError> {
     shape_script(text, false, ShapedScript::Thai)
 }
 
-fn shape_script(text: &str, rtl: bool, kind: ShapedScript) -> Result<Vec<ShapedCluster>, GlyphError> {
+pub fn shape_script(text: &str, rtl: bool, kind: ShapedScript) -> Result<Vec<ShapedCluster>, GlyphError> {
     let (font, data) = face(kind).ok_or(GlyphError::NoFont)?;
     let shaper = data.shaper(font).build();
     let scale = 1.0 / f64::from(shaper.units_per_em().max(1));
@@ -101,12 +106,12 @@ fn shape_script(text: &str, rtl: bool, kind: ShapedScript) -> Result<Vec<ShapedC
     buffer.set_script(match kind {
         ShapedScript::Arabic => script::ARABIC,
         ShapedScript::Hebrew => script::HEBREW,
-        ShapedScript::Thai => script::THAI,
+        ShapedScript::Thai | ShapedScript::ThaiNoto => script::THAI,
     });
     // Preserve the historical Arabic per-character mapping; Hebrew and Thai marks stay with their base.
     buffer.set_cluster_level(match kind {
         ShapedScript::Arabic => BufferClusterLevel::Characters,
-        ShapedScript::Hebrew | ShapedScript::Thai => BufferClusterLevel::MonotoneGraphemes,
+        ShapedScript::Hebrew | ShapedScript::Thai | ShapedScript::ThaiNoto => BufferClusterLevel::MonotoneGraphemes,
     });
     let shaped = shaper.shape(buffer, ShapeOptions::new());
     // Clusters are byte offsets into `text`; a cluster shows the characters up to the next one.

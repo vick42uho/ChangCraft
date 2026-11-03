@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use pdfcraft_render::{PageInfo, PageRenderer, RenderConfig, RenderRequest, RequestKind};
 
-pub use pdfcraft_ocr::{LANGUAGES, Models, Ocr, OcrError, PlacedWord};
+pub use pdfcraft_ocr::{LANGUAGES, Models, Ocr, OcrError, PlacedWord, paddle, typhoon};
 
 use crate::{DocId, Edit, EditError, Session};
 
@@ -86,7 +86,7 @@ pub fn engine() -> Result<Arc<Ocr>, String> {
 
 /// Whether the recognition models are installed.
 pub fn available() -> bool {
-    Models::find().is_some()
+    Models::find().is_some() || pdfcraft_ocr::paddle::PaddleModels::find().is_some() || pdfcraft_ocr::typhoon::api_key().is_some()
 }
 
 /// Everything recognition needs from a document, detached from the session.
@@ -109,6 +109,11 @@ impl OcrJob {
         let mut r = PageRenderer::new(self.bytes.clone(), config);
         let mut out = Vec::new();
         let total = self.pages.len();
+        let paddle = if self.pages.iter().any(|_| self.settings.language == "th") {
+            pdfcraft_ocr::Ocr::load_thai().ok()
+        } else {
+            None
+        };
         for (done, &page) in self.pages.iter().enumerate() {
             if !progress(done, total) {
                 break;
@@ -130,8 +135,14 @@ impl OcrJob {
                 out.push(skip(&e));
                 continue;
             }
-            let lines = match if self.settings.language.starts_with("th") {
+            let lines = match if self.settings.language == "th-cloud" {
                 pdfcraft_ocr::typhoon::recognize_typhoon(&shot.rgba, shot.width, shot.height, None)
+            } else if self.settings.language == "th" {
+                if let Some(ref p) = paddle {
+                    p.recognize(&shot.rgba, shot.width, shot.height)
+                } else {
+                    Err(pdfcraft_ocr::OcrError::NoModels)
+                }
             } else {
                 ocr.recognize(&shot.rgba, shot.width, shot.height)
             } {

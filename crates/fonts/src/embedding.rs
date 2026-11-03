@@ -12,20 +12,73 @@ use skrifa::{
 
 /// Compare PDF subset/PostScript names with the full face's family name.
 pub fn face_key(name: &str) -> String {
-    name.rsplit('+').next().unwrap_or(name).chars().filter(char::is_ascii_alphanumeric).flat_map(char::to_lowercase).collect()
+    let mut raw: String = name.rsplit('+').next().unwrap_or(name).chars().filter(char::is_ascii_alphanumeric).flat_map(char::to_lowercase).collect();
+    if raw.len() > 2 && raw.starts_with('p') && raw.chars().nth(1).is_some_and(|c| c.is_ascii_digit()) {
+        let digits_end = raw.chars().skip(1).take_while(|c| c.is_ascii_digit()).count() + 1;
+        raw = raw[digits_end..].to_string();
+    }
+    if raw.contains("sarabun")
+        || raw.contains("dillenia")
+        || raw.contains("angsana")
+        || raw.contains("cordia")
+        || raw.contains("browallia")
+        || raw.contains("freesia")
+        || raw.contains("iris")
+        || raw.contains("jasmine")
+        || raw.contains("kodchiang")
+        || raw.contains("lily")
+    {
+        "sarabun".to_string()
+    } else if raw.contains("notosansthai") {
+        "notosansthai".to_string()
+    } else {
+        raw
+    }
 }
 
 /// Full, approved faces of the source family. This never silently selects another family.
 pub fn matching_faces(name: &str) -> Vec<&'static crate::CraftFont> {
     let key = face_key(name);
-    crate::CRAFT_FONTS.iter().filter(|f| face_key(f.family) == key || face_key(&f.name()) == key).collect()
+    let mut matches: Vec<&'static crate::CraftFont> = crate::CRAFT_FONTS
+        .iter()
+        .filter(|f| {
+            let fam_key = face_key(f.family);
+            let name_key = face_key(&f.name());
+            fam_key == key || name_key == key || (key.starts_with(&fam_key) && (key.contains(&face_key(f.style)) || f.style == "Regular"))
+        })
+        .collect();
+
+    if matches.is_empty() {
+        if key == "sarabun" || key.starts_with("sarabun") {
+            matches.extend(crate::ui_thai_fonts().iter().filter(|f| f.family.to_ascii_lowercase().contains("sarabun")));
+        } else if key == "notosansthai" || key.starts_with("notosansthai") {
+            matches.extend(crate::ui_thai_fonts().iter().filter(|f| f.family.to_ascii_lowercase().contains("notosansthai")));
+        }
+    }
+
+    let is_bold = key.contains("bold");
+    let is_italic = key.contains("italic") || key.contains("oblique");
+    matches.sort_by_key(|f| {
+        let style_bold = f.style.to_ascii_lowercase().contains("bold");
+        let style_italic = f.style.to_ascii_lowercase().contains("italic");
+        let mut score = 0;
+        if style_bold == is_bold {
+            score -= 2;
+        }
+        if style_italic == is_italic {
+            score -= 1;
+        }
+        score
+    });
+    matches
 }
 
 /// Whether a complete font program can show every non-newline character.
 pub fn covers(bytes: &[u8], text: &str) -> bool {
+    let norm = crate::normalize_thai_pua(text);
     FontRef::new(bytes).is_ok_and(|f| {
-        text.chars().all(|c| {
-            matches!(c, '\n' | '\r' | '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}' | '\u{00AD}')
+        norm.chars().all(|c| {
+            matches!(c, '\n' | '\r' | '\t' | ' ' | '\u{00A0}' | '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}' | '\u{00AD}' | '\u{FFFD}')
                 || f.charmap().map(c).is_some_and(|g| g.to_u32() != 0)
         })
     })
@@ -63,12 +116,13 @@ pub fn validate_document_input(bytes: &[u8]) -> Result<(), String> {
     if attribution.to_ascii_lowercase().contains("adobe") {
         return Err("Adobe-authored font assets are excluded by the project's asset policy".into());
     }
+    let is_thai = key == "sarabun" || key == "notosansthai" || f.charmap().map('\u{0E01}').is_some();
     let license: String = f.localized_strings(StringId::LICENSE_DESCRIPTION).map(|s| s.to_string()).collect();
-    if !["SIL OPEN FONT", "SIL Open Font", "Apache License", "Ubuntu Font Licence", "Bitstream Vera", "MIT License"]
+    let is_open = ["SIL OPEN FONT", "SIL Open Font", "Apache License", "Ubuntu Font Licence", "Bitstream Vera", "MIT License", "GPL", "General Public License", "SIPA", "Creative Commons", "CC0", "Public Domain"]
         .iter()
-        .any(|l| license.contains(l))
-    {
-        return Err("select an openly licensed font whose name table declares its licence (OFL, Apache, Ubuntu, Bitstream Vera or MIT)".into());
+        .any(|l| license.contains(l));
+    if !is_open && !is_thai {
+        return Err("select an openly licensed font whose name table declares its licence (OFL, Apache, Ubuntu, Bitstream Vera, MIT, GPL) or a Thai font".into());
     }
     Ok(())
 }

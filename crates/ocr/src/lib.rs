@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 pub use pdfcraft_fonts::helvetica_width;
 
+pub mod paddle;
 pub mod typhoon;
 
 /// The model files, as named in ATTRIBUTION.toml.
@@ -26,7 +27,11 @@ pub const RECOGNITION_MODEL: &str = "text-recognition.rten";
 pub const ALPHABET: &str = " 0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~€ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 /// The languages the models read (ISO 639-1); all use the Latin alphabet without accents.
-pub const LANGUAGES: &[(&str, &str)] = &[("en", "English"), ("th", "Thai / ภาษาไทย (Typhoon OCR)")];
+pub const LANGUAGES: &[(&str, &str)] = &[
+    ("en", "English"),
+    ("th", "Thai / ภาษาไทย (PaddleOCR · offline)"),
+    ("th-cloud", "Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)"),
+];
 
 #[derive(Debug, thiserror::Error)]
 pub enum OcrError {
@@ -126,6 +131,12 @@ impl Ocr {
     /// Load the models found by [`Models::find`].
     pub fn find() -> Result<Ocr, OcrError> {
         Self::load(&Models::find().ok_or(OcrError::NoModels)?)
+    }
+
+    /// Load the Thai PaddleOCR models found on disk.
+    pub fn load_thai() -> Result<paddle::Paddle, OcrError> {
+        let models = paddle::PaddleModels::find().ok_or(OcrError::NoModels)?;
+        paddle::Paddle::load(&models)
     }
 
     /// Recognise the text in an RGBA (or RGB, or grey) image, `width` × `height` pixels.
@@ -257,6 +268,11 @@ pub fn text_layer(words: &[PlacedWord]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inspect_imageproc() {
+        // test available functions in rten_imageproc
+    }
 
     #[test]
     fn places_words_through_the_mapping() {

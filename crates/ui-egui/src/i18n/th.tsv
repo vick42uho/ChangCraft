@@ -2769,3 +2769,15 @@ theme	Appearance	ลักษณะที่ปรากฏ
 @plural	{n} field shows an old value|{n} fields show old values	{n} ฟิลด์แสดงค่าเดิม
 @plural	{n} more field calculates too early.|{n} more fields calculate too early.	มีอีก {n} ฟิลด์ที่คำนวณเร็วเกินไป
 	No field in this form calculates its value yet. Give a field a calculation on the Calculate tab of its properties, and it shows here.	แบบฟอร์มนี้ยังไม่มีฟิลด์ที่คำนวณค่า กำหนดการคำนวณให้ฟิลด์ในแท็บ "คำนวณ" ของคุณสมบัติฟิลด์ แล้วจะแสดงขึ้นที่นี่
+	OpenTyphoon key	คีย์ OpenTyphoon
+	Get a key	รับคีย์ API
+	Save and test	บันทึกและทดสอบ
+	Testing…	กำลังทดสอบ…
+	Key saved.	บันทึกคีย์เรียบร้อยแล้ว
+	Key set (ends in {tail})	ตั้งค่าคีย์แล้ว (ลงท้ายด้วย {tail})
+	Remove key	ลบคีย์
+	Key removed.	ลบคีย์เรียบร้อยแล้ว
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	การอ่านลายมือจะส่งรูปภาพของแต่ละหน้าไปยัง opentyphoon.ai ห้ามใช้กับเอกสารที่มีข้อมูลส่วนบุคคลหรือข้อมูลที่เป็นความลับ
+	Thai / ภาษาไทย (PaddleOCR · offline)	ภาษาไทย (PaddleOCR · ออฟไลน์)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	ลายมือไทย (OpenTyphoon · คลาวด์)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	ข้อความที่มีการจัดวางรูปสระซับซ้อนจำเป็นต้องใช้ฟอนต์ TrueType/OpenType ต้นฉบับที่สมบูรณ์ กรุณาโหลดฟอนต์นั้นก่อนแก้ไข
