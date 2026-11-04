@@ -45,8 +45,22 @@ pub(crate) const BASE_SIDE: f32 = 2048.0;
 const THUMB_W: f32 = 240.0;
 const THUMB_H: f32 = 320.0;
 const THUMB_BYTES: usize = 24 * 1024 * 1024;
-const PAGE_BYTES: usize = 128 * 1024 * 1024;
-const TILE_BYTES: usize = 128 * 1024 * 1024;
+/// The smallest whole-page allowance ([`page_budget`]).
+pub(crate) const PAGE_BYTES: usize = 128 * 1024 * 1024;
+
+/// The largest whole-page allowance ([`page_budget`]).
+#[cfg(not(target_arch = "wasm32"))]
+const MAX_PAGE_BYTES: usize = 384 * 1024 * 1024;
+
+/// The web build's largest whole-page allowance ([`page_budget`]).
+#[cfg(target_arch = "wasm32")]
+const MAX_PAGE_BYTES: usize = 256 * 1024 * 1024;
+
+/// Rasters the size of the largest whole page on screen that the allowance holds between its
+/// limits: the pages on screen and the pages just behind and ahead of them.
+const BUDGET_PAGES: usize = 8;
+
+pub(crate) const TILE_BYTES: usize = 128 * 1024 * 1024;
 const UPLOAD_BYTES_PER_FRAME: usize = 16 * 1024 * 1024;
 const RESULTS_PER_FRAME: usize = 8;
 /// A defensive ceiling for unusually large viewports / n-up previews.
@@ -447,6 +461,9 @@ pub struct DocView {
     /// Pages on screen this frame. Their rasters and tiles are always admitted: the viewport
     /// bounds them, and the byte and count limits apply to prefetch only.
     frame_visible: HashSet<usize>,
+    /// Pages whose whole-page raster this frame asks for, on screen or prefetched. An arriving
+    /// raster over the allowance evicts the other cached pages first.
+    frame_demanded: HashSet<usize>,
     /// Thumbnails that are out of date (still shown until their replacement arrives).
     stale_thumbs: HashSet<usize>,
     /// Tiles that are out of date (still shown until their replacement arrives).
@@ -619,6 +636,13 @@ pub struct DocView {
     /// in-flight ones cannot be cancelled mid-operator. Older tiles and the backdrop stay
     /// stretched meanwhile; fresh tiles go out once the pan settles.
     pub(crate) last_scroll: Vec2,
+    /// The way the view last moved vertically: 1 down, -1 up, 0 before any move and after the
+    /// content's size changes (a zoom or a layout change). A jump to a page or a search result
+    /// counts as a move. It stays set while the view is still, so the pages prefetched ahead stay
+    /// in the render queue until they arrive.
+    pub(crate) scroll_dir: i8,
+    /// The content's size when `scroll_dir` was last updated.
+    scroll_content: Vec2,
     /// Side-by-side compare: scroll to here this frame, following the other half.
     pub(crate) sync_scroll: Option<Vec2>,
     /// The page widget's id, by which the Hand tool finds its drag before the pages are laid out.
@@ -651,6 +675,14 @@ fn thumbnail_density(demand: usize, ppp: f32) -> f32 {
 
 fn thumbnail_scale(width: f32, height: f32, density: f32) -> f32 {
     (THUMB_W / width.max(1.0)).min(THUMB_H / height.max(1.0)) * density
+}
+
+/// The whole-page byte allowance when the largest whole-page raster on screen takes `largest`
+/// bytes: [`BUDGET_PAGES`] such rasters, kept between [`PAGE_BYTES`] and [`MAX_PAGE_BYTES`].
+/// The raster's size follows the zoom, the display density and the page; a tiled page is on
+/// screen as a small backdrop, so it does not raise the allowance.
+pub(crate) fn page_budget(largest: usize) -> usize {
+    largest.saturating_mul(BUDGET_PAGES).clamp(PAGE_BYTES, MAX_PAGE_BYTES)
 }
 
 /// Organize-toolbar actions that need the app (file pickers, new tabs, dialogs).
@@ -702,6 +734,26 @@ impl DocView {
     /// Where `page` is drawn on screen this frame (`None` when it is not on screen).
     pub fn page_screen_rect(&self, page: usize) -> Option<Rect> {
         self.screen_xforms.iter().find(|(p, _)| *p == page).map(|(_, xf)| xf.rect)
+    }
+
+    /// The pages with a cached whole-page raster, in page order (diagnostics and tests).
+    pub fn cached_pages_debug(&self) -> Vec<usize> {
+        let mut pages: Vec<usize> = self.pages.keys().copied().collect();
+        pages.sort_unstable();
+        pages
+    }
+
+    /// The whole-page allowance ([`page_budget`]) for the larger of `demand` and the rasters held
+    /// for the pages on screen other than `except`. A held raster counts while a zoom hold keeps
+    /// it on screen without a request.
+    fn on_screen_page_budget(&self, demand: usize, except: Option<usize>) -> usize {
+        page_budget(
+            self.pages
+                .iter()
+                .filter(|(p, _)| Some(**p) != except && self.frame_visible.contains(p))
+                .map(|(_, p)| texture_bytes(&p.tex))
+                .fold(demand, usize::max),
+        )
     }
 
     /// The document area on screen.
@@ -765,6 +817,7 @@ impl DocView {
             frame_queue: Vec::new(),
             frame_geometry_changed: false,
             frame_visible: HashSet::new(),
+            frame_demanded: HashSet::new(),
             stale_thumbs: HashSet::new(),
             stale_tiles: HashSet::new(),
             current_scale_tag: 0,
@@ -828,6 +881,8 @@ impl DocView {
             last_scale: 0.0,
             sharp_hold_until: 0.0,
             last_scroll: Vec2::ZERO,
+            scroll_dir: 0,
+            scroll_content: Vec2::ZERO,
             sync_scroll: None,
             page_widget: None,
             pan_hold_until: 0.0,
@@ -1834,6 +1889,17 @@ impl DocView {
         let mut tile_tags = HashSet::new();
         let mut grid = Vec::new();
         let (mut page_bytes, mut tile_bytes) = (0usize, 0usize);
+        let demand = requests
+            .iter()
+            .filter(|r| {
+                r.kind == RequestKind::Pixels && r.tile.is_none() && r.tag & (GRID_TAG | PRINT_TAG) == 0 && self.frame_visible.contains(&r.page)
+            })
+            .filter_map(|r| {
+                let p = info.pages.get(r.page)?;
+                Some(rgba_bytes(device_pixels(p.width, r.scale) as usize, device_pixels(p.height, r.scale) as usize))
+            })
+            .fold(0, usize::max);
+        let page_limit = self.on_screen_page_budget(demand, None);
         for req in requests.iter().filter(|r| r.kind == RequestKind::Pixels) {
             let Some(p) = info.pages.get(req.page) else { continue };
             // Organize-grid renders: only the cells in view that need one (organize_grid).
@@ -1866,7 +1932,7 @@ impl DocView {
                 }
             } else {
                 let bytes = rgba_bytes(device_pixels(p.width, req.scale) as usize, device_pixels(p.height, req.scale) as usize);
-                if (!visible && (page_bytes.saturating_add(bytes) > PAGE_BYTES || pages.len() >= MAX_CACHED_PAGES)) || !pages.insert(req.page) {
+                if (!visible && (page_bytes.saturating_add(bytes) > page_limit || pages.len() >= MAX_CACHED_PAGES)) || !pages.insert(req.page) {
                     continue;
                 }
                 page_bytes = page_bytes.saturating_add(bytes);
@@ -1879,10 +1945,11 @@ impl DocView {
         // current page first, so turning back a page shows it at once instead of rendering.
         let mut undemanded: Vec<usize> = self.pages.keys().copied().filter(|p| !pages.contains(p)).collect();
         undemanded.sort_by_key(|p| p.abs_diff(self.current));
+        self.frame_demanded = pages.clone();
         let mut kept = pages.len();
         for page in undemanded {
             let bytes = self.pages.get(&page).map_or(0, |p| texture_bytes(&p.tex));
-            if kept < MAX_CACHED_PAGES && page_bytes.saturating_add(bytes) <= PAGE_BYTES {
+            if kept < MAX_CACHED_PAGES && page_bytes.saturating_add(bytes) <= page_limit {
                 page_bytes = page_bytes.saturating_add(bytes);
                 kept += 1;
                 pages.insert(page);
@@ -2119,14 +2186,21 @@ impl DocView {
             visible || bytes <= TILE_BYTES.saturating_sub(retained)
         } else {
             let thumb = req.tag & THUMB_TAG != 0;
-            let (cache, limit) = if thumb { (&mut self.thumbs, THUMB_BYTES) } else { (&mut self.pages, PAGE_BYTES) };
+            let page_limit = self.on_screen_page_budget(if visible { bytes } else { 0 }, Some(req.page));
+            let (cache, limit) = if thumb { (&mut self.thumbs, THUMB_BYTES) } else { (&mut self.pages, page_limit) };
             cache.remove(&req.page);
             let mut retained = cache.values().fold(0usize, |n, p| n.saturating_add(texture_bytes(&p.tex)));
             // A zoom/DPI change can temporarily retain larger stale images than the new
             // demand estimates. Evict those first, then let the current demand refill them.
             let on_screen = |p: &usize| !thumb && self.frame_visible.contains(p);
             while retained.saturating_add(bytes) > limit {
-                let Some(page) = cache.keys().copied().filter(|p| !on_screen(p)).max_by_key(|p| p.abs_diff(self.current)) else { break };
+                // Pages this frame does not ask for go first, then those behind the scroll, the
+                // farthest from the current page first.
+                let evict_order = |p: &usize| {
+                    let demanded = !thumb && self.frame_demanded.contains(p);
+                    (!demanded, !thumb && behind_scroll(self.continuous, self.scroll_dir, self.current, *p), p.abs_diff(self.current))
+                };
+                let Some(page) = cache.keys().copied().filter(|p| !on_screen(p)).max_by_key(evict_order) else { break };
                 if let Some(old) = cache.remove(&page) {
                     retained = retained.saturating_sub(texture_bytes(&old.tex));
                 }
@@ -4064,6 +4138,8 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     if glide != Vec2::ZERO {
         view.fling.moved((scroll_offset - view.last_scroll).length() > 0.01);
     }
+    view.scroll_dir = scroll_direction(view.scroll_dir, scroll_offset.y - view.last_scroll.y, out.content_size != view.scroll_content);
+    view.scroll_content = out.content_size;
     view.last_scroll = scroll_offset;
     let pan_held = now_settle < view.pan_hold_until;
     let (mut wanted, visible_now) = out.inner;
@@ -4077,18 +4153,20 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         let max_side = ui.ctx().input(|inp| inp.max_texture_side) as f32;
         for i in (last.saturating_add(1)..=last.saturating_add(n)).chain(first.saturating_sub(n)..first) {
             let Some(p) = info.pages.get(i).filter(|_| !view.errors.contains_key(&i)) else { continue };
-            // As drawn: the whole page at this scale, or the backdrop of a tiled page.
-            let side = p.width.max(p.height).max(1.0);
-            wanted.push(if side * scale > TILE_THRESHOLD.min(max_side) {
-                let bs = BASE_SIDE.min(max_side) / side;
-                (i, bs, scale_tag(bs), None)
-            } else {
-                (i, scale, tag, None)
-            });
+            wanted.push(prefetch_demand(view, p, i, scale, tag, max_side));
         }
     }
+    // Continuous view also asks for the rows ahead of the way it last moved.
+    let max_side = ui.ctx().input(|inp| inp.max_texture_side) as f32;
+    for i in scroll_prefetch(view, &visible_now) {
+        if view.errors.contains_key(&i) || wanted.iter().any(|w| w.0 == i) {
+            continue;
+        }
+        let Some(p) = info.pages.get(i) else { continue };
+        wanted.push(prefetch_demand(view, p, i, scale, tag, max_side));
+    }
     let cur = view.current;
-    wanted.sort_by_key(|w| (!visible_now.contains(&w.0), w.0.abs_diff(cur), w.3.is_some()));
+    order_demand(view, &mut wanted, &visible_now);
     // Tiles of far-away pages are useless: free them. Tiles of an earlier zoom stay for a page
     // that is on screen, whether or not the page is tiled at this zoom (#2196): a zoom out below
     // the tiling threshold used to drop the tiles of the zoom just left, so coming back to it
@@ -4413,6 +4491,71 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     if let Some((source, file, destination)) = remote_open {
         app.open_remote_link(source, file, destination);
     }
+}
+
+/// The way the view moves after a frame whose offset changed by `dy` points: down (1) or up (-1)
+/// for a move of more than half a point, `dir` otherwise, and 0 when the content's size changed
+/// (a zoom or a layout change).
+fn scroll_direction(dir: i8, dy: f32, resized: bool) -> i8 {
+    if resized {
+        0
+    } else if dy > 0.5 {
+        1
+    } else if dy < -0.5 {
+        -1
+    } else {
+        dir
+    }
+}
+
+/// Rows of pages that continuous view prefetches past the window in the direction it last
+/// moved.
+const PREFETCH_ROWS: usize = 2;
+
+/// The pages continuous view prefetches past the window: the next [`PREFETCH_ROWS`] rows the way
+/// it last moved, nearest first, and none before it moves. The web build renders on the UI
+/// thread, so it prefetches none.
+fn scroll_prefetch(view: &DocView, visible_now: &[usize]) -> Vec<usize> {
+    if !view.continuous || cfg!(target_arch = "wasm32") {
+        return Vec::new();
+    }
+    let n = PREFETCH_ROWS * if view.layout == PageLayout::Single { 1 } else { 2 };
+    match (view.scroll_dir, visible_now.iter().min(), visible_now.iter().max()) {
+        (1, _, Some(&last)) => (last.saturating_add(1)..=last.saturating_add(n)).collect(),
+        (-1, Some(&first), _) => (first.saturating_sub(n)..first).rev().collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The whole-page raster a prefetch asks for: the page at this scale, or the backdrop of a page
+/// that is tiled at this scale. A cached raster sharper than the backdrop stays demanded as it
+/// is, as `paint_page_surface` demands it under tiles.
+fn prefetch_demand(view: &DocView, p: &pdfcraft_render::PageInfo, i: usize, scale: f32, tag: u64, max_side: f32) -> (usize, f32, u64, Option<Tile>) {
+    let side = p.width.max(p.height).max(1.0);
+    if side * scale <= TILE_THRESHOLD.min(max_side) {
+        return (i, scale, tag, None);
+    }
+    let bs = BASE_SIDE.min(max_side) / side;
+    match view.pages.get(&i).filter(|c| c.tag != STALE_TAG && tag_scale(c.tag) >= bs) {
+        Some(c) => (i, tag_scale(c.tag), c.tag, None),
+        None => (i, bs, scale_tag(bs), None),
+    }
+}
+
+/// Whether `page` lies behind the way continuous view last moved: above the current page while
+/// scrolling down, below it while scrolling up. `false` outside continuous view.
+fn behind_scroll(continuous: bool, scroll_dir: i8, current: usize, page: usize) -> bool {
+    continuous && ((scroll_dir > 0 && page < current) || (scroll_dir < 0 && page > current))
+}
+
+/// Orders a frame's demand: pages on screen first, then off-screen pages ahead of the way the
+/// view last moved, then those behind it, each nearest the current page first.
+fn order_demand(view: &DocView, wanted: &mut [(usize, f32, u64, Option<Tile>)], visible_now: &[usize]) {
+    let cur = view.current;
+    wanted.sort_by_key(|w| {
+        let shown = visible_now.contains(&w.0);
+        (!shown, !shown && behind_scroll(view.continuous, view.scroll_dir, cur, w.0), w.0.abs_diff(cur), w.3.is_some())
+    });
 }
 
 #[derive(Clone, Copy)]
@@ -7026,5 +7169,86 @@ trailer << /Root 1 0 R >>
         assert_eq!(red(&pixels, old), 0, "nothing shows where it first was");
         h.state_mut().views[0].stale_tiles.clear();
         h.state_mut().views[0].tiles.clear();
+    }
+
+    fn scroll_demand(v: &DocView, shown: &[usize]) -> Vec<RenderRequest> {
+        let mut wanted: Vec<(usize, f32, u64, Option<Tile>)> = shown.iter().map(|&p| (p, 1.0, 1000, None)).collect();
+        wanted.extend(scroll_prefetch(v, shown).into_iter().map(|p| (p, 1.0, 1000, None)));
+        order_demand(v, &mut wanted, shown);
+        wanted.into_iter().map(|(page, scale, tag, tile)| RenderRequest { page, scale, tag, tile, ..Default::default() }).collect()
+    }
+
+    #[test]
+    fn continuous_view_prefetches_the_rows_ahead_of_the_way_it_moved() {
+        let mut v = view(20, PageLayout::Single, true);
+        v.current = 10;
+        assert!(scroll_prefetch(&v, &[9, 10]).is_empty(), "nothing before the view moves");
+        v.scroll_dir = 1;
+        assert_eq!(scroll_prefetch(&v, &[9, 10]), [11, 12]);
+        v.scroll_dir = -1;
+        assert_eq!(scroll_prefetch(&v, &[9, 10]), [8, 7]);
+        assert_eq!(scroll_prefetch(&v, &[0, 1]), Vec::<usize>::new(), "nothing above the first page");
+        let mut two = view(20, PageLayout::TwoUp, true);
+        two.scroll_dir = 1;
+        assert_eq!(scroll_prefetch(&two, &[8, 9]), [10, 11, 12, 13], "two rows of two pages");
+        let mut single = view(20, PageLayout::Single, false);
+        single.scroll_dir = 1;
+        assert!(scroll_prefetch(&single, &[9]).is_empty(), "single-page view keeps its own prefetch");
+    }
+
+    #[test]
+    fn scrolling_the_other_way_drops_the_prefetch_from_the_queue() {
+        let info = DocInfo {
+            pages: (0..20)
+                .map(|_| pdfcraft_render::PageInfo { width: 300.0, height: 400.0, label: String::new(), crop: [0.0, 0.0, 300.0, 400.0], rotation: 0 })
+                .collect(),
+            ..Default::default()
+        };
+        let mut v = DocView::new(DocId(1), &info, ViewDefaults { continuous: true, ..Default::default() });
+        v.current = 10;
+        v.scroll_dir = 1;
+        v.frame_queue = scroll_demand(&v, &[9, 10]);
+        let down: Vec<usize> = v.prepare_render_queue(&info, 1.0).iter().map(|r| r.page).collect();
+        assert_eq!(down, [10, 9, 11, 12], "on-screen pages first, then the pages below");
+        v.scroll_dir = -1;
+        v.frame_queue = scroll_demand(&v, &[9, 10]);
+        let up: Vec<usize> = v.prepare_render_queue(&info, 1.0).iter().map(|r| r.page).collect();
+        assert_eq!(up, [10, 9, 8, 7], "the pages below leave the queue, which cancels their renders");
+    }
+
+    #[test]
+    fn the_way_the_view_moved_does_not_reorder_the_pages_on_screen() {
+        let mut v = view(20, PageLayout::Single, true);
+        v.current = 10;
+        let shown = [8, 9, 10, 11, 12];
+        let still: Vec<usize> = scroll_demand(&v, &shown).iter().map(|r| r.page).collect();
+        v.scroll_dir = 1;
+        let down: Vec<usize> = scroll_demand(&v, &shown).iter().map(|r| r.page).collect();
+        assert_eq!(down[..5], still[..5], "on-screen pages keep their order");
+        assert_eq!(down[5..], [13, 14]);
+        // Off-screen pages ahead of the move come before nearer ones behind it.
+        let mut wanted = vec![(9, 1.0, 1000, None), (13, 1.0, 1000, None), (10, 1.0, 1000, None)];
+        order_demand(&v, &mut wanted, &[10]);
+        assert_eq!(wanted.iter().map(|w| w.0).collect::<Vec<_>>(), [10, 13, 9]);
+    }
+
+    #[test]
+    fn the_page_allowance_is_eight_on_screen_rasters_within_its_limits() {
+        let mib = 1024 * 1024;
+        assert_eq!(page_budget(0), PAGE_BYTES);
+        assert_eq!(page_budget(10 * mib), PAGE_BYTES);
+        assert_eq!(page_budget(20 * mib), 160 * mib);
+        let ceiling = page_budget(usize::MAX);
+        assert_eq!(page_budget(64 * mib), ceiling);
+        assert!((256 * mib..=384 * mib).contains(&ceiling), "{ceiling}");
+    }
+
+    #[test]
+    fn a_zoom_or_layout_change_clears_the_scroll_direction() {
+        assert_eq!(scroll_direction(0, 40.0, false), 1);
+        assert_eq!(scroll_direction(1, -40.0, false), -1);
+        assert_eq!(scroll_direction(-1, 0.2, false), -1, "a still view keeps its direction");
+        assert_eq!(scroll_direction(1, -300.0, true), 0, "a zoom out moves the offset up without a scroll");
+        assert_eq!(scroll_direction(-1, 300.0, true), 0);
     }
 }

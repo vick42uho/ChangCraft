@@ -669,7 +669,7 @@ pub(crate) fn page_input(
             // sees its lost focus, so replacing the box first would drop what was typed.
             let open = view.fill_text.replace(TypeBox { page, at: top, text: String::new(), size: text_size, focus: true });
             open.filter(|tb| !tb.text.trim().is_empty()).map(|tb| {
-                FillAction::Edit(Box::new(typed(tb.page, tb.at, tb.text.trim(), tb.size, crate::comments::page_rotation(info, tb.page), author)))
+                FillAction::Edit(Box::new(typed(tb.page, tb.at, &tb.text, tb.size, crate::comments::page_rotation(info, tb.page), author)))
             })
         }
         FillTool::Date => Some(match date_text {
@@ -729,13 +729,19 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
             let Some(t) = view.fill_text.as_mut() else { return };
             // The box is white in every theme, so the caret must not follow the theme (pale in dark mode) (#655).
             ui.visuals_mut().text_cursor.stroke.color = crate::edit_text_ui::caret_color_on(Color32::WHITE);
-            let width = ((t.text.chars().count().max(8) as f32) * t.size as f32 * 0.6 * zoom).clamp(60.0, 600.0);
+            let font = egui::FontId::proportional((t.size as f32 * zoom).max(8.0));
+            let natural = ui.fonts_mut(|f| f.layout_no_wrap(t.text.clone(), font.clone(), Color32::BLACK).size().x);
+            let margin = egui::Margin::symmetric(4, 2);
+            // Include the field padding and a pixel for layout rounding in the measured width.
+            let width = (natural + margin.sum().x + 1.0).max(8.0 * t.size as f32 * 0.6 * zoom).clamp(60.0, 600.0);
             // The area's max rect is last frame's size, which caps the edit's width; widen it so the
             // box grows as text is typed.
             ui.set_min_width(width);
             let r = ui.add(
-                egui::TextEdit::singleline(&mut t.text)
-                    .font(egui::FontId::proportional((t.size as f32 * zoom).max(8.0)))
+                egui::TextEdit::multiline(&mut t.text)
+                    .margin(margin)
+                    .desired_rows(1)
+                    .font(font)
                     .desired_width(width)
                     .background_color(Color32::from_rgba_unmultiplied(255, 255, 255, 230))
                     .text_color(Color32::BLACK)
@@ -759,7 +765,7 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
     if commit {
         let tb = view.fill_text.take()?;
         if !tb.text.trim().is_empty() {
-            return Some(typed(tb.page, tb.at, tb.text.trim(), tb.size, crate::comments::page_rotation(info, tb.page), author));
+            return Some(typed(tb.page, tb.at, &tb.text, tb.size, crate::comments::page_rotation(info, tb.page), author));
         }
     }
     None

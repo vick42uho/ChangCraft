@@ -824,8 +824,12 @@ impl<'a> Inspector<'a> {
             Object::Name(n) => String::from_utf8_lossy(n).into_owned(),
             _ => return None,
         };
-        let s = s.trim_matches('\0').trim().to_string();
-        (!s.is_empty()).then_some(s)
+        let s = s.trim_matches('\0');
+        let keep_breaks = key == b"Contents"
+            && self.name(d, b"Subtype").as_deref() == Some("FreeText")
+            && self.name(d, b"IT").as_deref() == Some("FreeTextTypeWriter");
+        let s = if keep_breaks { s } else { s.trim() };
+        (!s.trim().is_empty()).then(|| s.to_owned())
     }
 
     fn name(&self, d: &Dictionary, key: &[u8]) -> Option<String> {

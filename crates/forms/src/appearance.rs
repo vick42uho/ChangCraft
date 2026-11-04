@@ -489,7 +489,9 @@ pub fn field_appearance_drawn(doc: &Document, f: &Field, w: &Widget, values: &[S
         Some((o, enc)) => (da.font.clone(), o, enc),
         None => ("Helv".to_string(), helvetica(), FontText::WinAnsi),
     };
-    let has_thai = text.chars().any(|c| matches!(u32::from(c), 0x0E00..=0x0E7F | 0xF700..=0xF71C)) && pdfcraft_fonts::document_thai_font().is_some();
+    let has_thai = font_name == "Helv"
+        && text.chars().any(|c| matches!(u32::from(c), 0x0E00..=0x0E7F | 0xF700..=0xF71C))
+        && pdfcraft_fonts::document_thai_font().is_some();
     let thai_width = |t: &str, sz: f64| -> f64 {
         let norm = pdfcraft_fonts::normalize_thai_pua(t);
         if let Ok(clusters) = pdfcraft_fonts::shape_thai(&norm) {
