@@ -11,7 +11,7 @@ use egui::{Align, Color32, CornerRadius, Layout, Rect, Sense, Stroke, vec2};
 use pdfcraft_engine::{AddedText, FontFamily, TextAlign};
 
 use crate::edit_text_ui::Extras;
-use crate::theme::Tokens;
+use crate::theme::{self, Tokens};
 use crate::{icons, widgets};
 
 /// A font picked from the font list. The caller applies it, since keeping the paragraph's own
@@ -26,8 +26,8 @@ pub(crate) enum FontChoice {
     Family(FontFamily),
     /// Load font…: pick a font file.
     Load,
-    /// A font file installed on this computer.
-    Installed(std::path::PathBuf),
+    /// A font file installed on this computer (path and face index).
+    Installed(std::path::PathBuf, u32),
 }
 
 /// What the font list offers and shows.
@@ -135,9 +135,38 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, look: &mut AddedText, extras:
                     ui.label(tl!("No openly licensed document fonts found. Load a font file."));
                 }
                 Some(list) => {
-                    for font in list {
+                    let is_thai_name = |name: &str| {
+                        let lower = name.to_ascii_lowercase();
+                        lower.contains("angsana")
+                            || lower.contains("cordia")
+                            || lower.contains("browallia")
+                            || lower.contains("sarabun")
+                            || lower.contains("kanit")
+                            || lower.contains("prompt")
+                            || lower.contains("mitr")
+                            || lower.contains("leelawadee")
+                            || lower.contains("chula")
+                            || lower.contains("krub")
+                            || lower.contains("charmmanee")
+                            || lower.contains("tahoma")
+                    };
+                    let (thai_fonts, other_fonts): (Vec<_>, Vec<_>) = list.into_iter().partition(|f| is_thai_name(&f.face) || is_thai_name(&f.family));
+                    if !thai_fonts.is_empty() {
+                        ui.label(egui::RichText::new("🇹🇭 ฟอนต์ไทยในเครื่อง (Installed Thai Fonts)").font(theme::semibold(11.0)).color(t.text_faint));
+                        for font in thai_fonts {
+                            if ui.button(&font.face).clicked() {
+                                out.font = Some(FontChoice::Installed(font.path, font.index));
+                                ui.close();
+                            }
+                        }
+                        if !other_fonts.is_empty() {
+                            ui.separator();
+                            ui.label(egui::RichText::new(tl!("Other fonts")).font(theme::semibold(11.0)).color(t.text_faint));
+                        }
+                    }
+                    for font in other_fonts {
                         if ui.button(&font.face).clicked() {
-                            out.font = Some(FontChoice::Installed(font.path));
+                            out.font = Some(FontChoice::Installed(font.path, font.index));
                             ui.close();
                         }
                     }

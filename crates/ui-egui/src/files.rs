@@ -365,7 +365,11 @@ impl PdfCraftApp {
                 std::fs::File::open(p).and_then(|f| {
                     let mut bytes = Vec::new();
                     f.take((16 << 20) + 1).read_to_end(&mut bytes)?;
-                    Ok(bytes)
+                    if bytes.starts_with(b"ttcf") {
+                        pdfcraft_fonts::embedding::extract_ttc_face(&bytes, 0).map_err(std::io::Error::other)
+                    } else {
+                        Ok(bytes)
+                    }
                 })
             } else {
                 std::fs::read(p)
@@ -521,6 +525,19 @@ impl PdfCraftApp {
                 self.redact_search.mode = crate::redact_ui::SearchMode::Words;
             }
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn use_installed_font(&mut self, page: usize, path: &std::path::Path, index: u32) {
+        use std::io::Read;
+        let Ok(file) = std::fs::File::open(path) else { return };
+        let mut raw = Vec::new();
+        if file.take((16 << 20) + 1).read_to_end(&mut raw).is_err() {
+            return;
+        }
+        let Ok(bytes) = pdfcraft_fonts::embedding::extract_ttc_face(&raw, index) else { return };
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "font.ttf".into());
+        self.use_files(FilePurpose::TextFont { page }, vec![(name, bytes)]);
     }
 
     pub fn replace_pages_dialog(&mut self) {

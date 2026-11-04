@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Debug)]
 pub struct FontFile {
     pub path: PathBuf,
+    pub index: u32,
     pub family: String,
     pub face: String,
 }
@@ -56,26 +57,36 @@ pub fn discover(roots: &[PathBuf]) -> Vec<FontFile> {
                 pending.extend(children.take(remaining).filter_map(Result::ok).map(|p| (p.path(), depth + 1)));
             }
         } else if meta.is_file() && meta.len() <= (16 << 20) && font_extension(&path) {
-            if meta.len() > budget {
-                continue;
-            }
-            budget = budget.saturating_sub(meta.len());
             let mut bytes = Vec::new();
             let read = std::fs::File::open(&path).and_then(|f| f.take((16 << 20) + 1).read_to_end(&mut bytes));
-            if read.is_err()
-                || pdfcraft_fonts::embedding::validate_document_input(&bytes).is_err()
-                || pdfcraft_fonts::embedding::validate(&bytes).is_err()
-            {
+            if read.is_err() {
                 continue;
             }
-            if let Ok((family, face)) = pdfcraft_fonts::embedding::names(&bytes) {
-                files.push(FontFile { path, family, face });
+            let count = pdfcraft_fonts::embedding::ttc_face_count(&bytes);
+            let mut matched = false;
+            for idx in 0..count.min(16) {
+                let Ok(face_bytes) = pdfcraft_fonts::embedding::extract_ttc_face(&bytes, idx) else { continue };
+                if pdfcraft_fonts::embedding::validate_document_input(&face_bytes).is_err()
+                    || pdfcraft_fonts::embedding::validate(&face_bytes).is_err()
+                {
+                    continue;
+                }
+                if let Ok((family, _, face)) = pdfcraft_fonts::embedding::names_with_full(&face_bytes) {
+                    files.push(FontFile { path: path.clone(), index: idx, family, face });
+                    matched = true;
+                }
+            }
+            if matched {
+                budget = budget.saturating_sub(meta.len());
+                if budget == 0 {
+                    break;
+                }
             }
         }
     }
-    files.sort_by(|a, b| a.face.cmp(&b.face).then(a.path.cmp(&b.path)));
+    files.sort_by(|a, b| a.face.cmp(&b.face).then(a.path.cmp(&b.path)).then(a.index.cmp(&b.index)));
     files
 }
 fn font_extension(path: &Path) -> bool {
-    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("ttf") || e.eq_ignore_ascii_case("otf"))
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("ttf") || e.eq_ignore_ascii_case("otf") || e.eq_ignore_ascii_case("ttc"))
 }

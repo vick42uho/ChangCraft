@@ -83,8 +83,96 @@ pub fn matching_faces(name: &str) -> Vec<&'static crate::CraftFont> {
     matches
 }
 
+/// If `bytes` is a TrueType Collection (`ttcf`), extract font `index` as a standalone TrueType / OpenType font (`sfnt`).
+/// If `bytes` is already a standalone font, returns `bytes.to_vec()`.
+pub fn extract_ttc_face(bytes: &[u8], index: u32) -> Result<Vec<u8>, String> {
+    if !bytes.starts_with(b"ttcf") {
+        return Ok(bytes.to_vec());
+    }
+    if bytes.len() < 12 {
+        return Err("truncated TTC header".into());
+    }
+    let num_fonts = u32::from_be_bytes(bytes[8..12].try_into().map_err(|_| "invalid TTC")?);
+    if index >= num_fonts {
+        return Err("font index out of range in TTC".into());
+    }
+    let offset_pos = 12usize.saturating_add((index as usize).saturating_mul(4));
+    if bytes.len() < offset_pos.saturating_add(4) {
+        return Err("truncated TTC offset table".into());
+    }
+    let font_offset = u32::from_be_bytes(bytes[offset_pos..offset_pos + 4].try_into().map_err(|_| "invalid TTC offset")?) as usize;
+    if bytes.len() < font_offset.saturating_add(12) {
+        return Err("truncated font directory in TTC".into());
+    }
+    let num_tables = u16::from_be_bytes(bytes[font_offset + 4..font_offset + 6].try_into().map_err(|_| "invalid TTC tables")?) as usize;
+    let header_size = 12usize.saturating_add(num_tables.saturating_mul(16));
+    if bytes.len() < font_offset.saturating_add(header_size) {
+        return Err("truncated table records in TTC".into());
+    }
+
+    let mut records = Vec::with_capacity(num_tables);
+    let mut pos = font_offset + 12;
+    for _ in 0..num_tables {
+        let tag = &bytes[pos..pos + 4];
+        let check_sum = &bytes[pos + 4..pos + 8];
+        let off = u32::from_be_bytes(bytes[pos + 8..pos + 12].try_into().map_err(|_| "invalid table record")?) as usize;
+        let len = u32::from_be_bytes(bytes[pos + 12..pos + 16].try_into().map_err(|_| "invalid table record")?) as usize;
+        if off.saturating_add(len) > bytes.len() {
+            return Err("table data out of bounds in TTC".into());
+        }
+        records.push((tag, check_sum, off, len));
+        pos += 16;
+    }
+
+    let mut total_len = header_size;
+    for &(_, _, _, len) in &records {
+        let pad = (4 - (len % 4)) % 4;
+        total_len = total_len.saturating_add(len).saturating_add(pad);
+    }
+
+    let mut out = Vec::with_capacity(total_len);
+    out.extend_from_slice(&bytes[font_offset..font_offset + 12]);
+
+    let mut current_offset = header_size;
+    for &(tag, check_sum, _, len) in &records {
+        let pad = (4 - (len % 4)) % 4;
+        out.extend_from_slice(tag);
+        out.extend_from_slice(check_sum);
+        out.extend_from_slice(&(current_offset as u32).to_be_bytes());
+        out.extend_from_slice(&(len as u32).to_be_bytes());
+        current_offset += len + pad;
+    }
+
+    for &(_, _, off, len) in &records {
+        let pad = (4 - (len % 4)) % 4;
+        out.extend_from_slice(&bytes[off..off + len]);
+        out.extend(std::iter::repeat(0u8).take(pad));
+    }
+
+    Ok(out)
+}
+
+/// Returns the number of fonts in a TrueType Collection (`ttcf`), or 1 for standalone fonts.
+pub fn ttc_face_count(bytes: &[u8]) -> u32 {
+    if !bytes.starts_with(b"ttcf") || bytes.len() < 12 {
+        return 1;
+    }
+    u32::from_be_bytes(bytes[8..12].try_into().unwrap_or([0, 0, 0, 1]))
+}
+
 /// Whether a complete font program can show every non-newline character.
 pub fn covers(bytes: &[u8], text: &str) -> bool {
+    let ttf_buf;
+    let bytes = if bytes.starts_with(b"ttcf") {
+        if let Ok(b) = extract_ttc_face(bytes, 0) {
+            ttf_buf = b;
+            &ttf_buf
+        } else {
+            bytes
+        }
+    } else {
+        bytes
+    };
     let norm = crate::normalize_thai_pua(text);
     FontRef::new(bytes).is_ok_and(|f| {
         norm.chars().all(|c| {
@@ -96,8 +184,21 @@ pub fn covers(bytes: &[u8], text: &str) -> bool {
 
 /// Names come from the program, never a caller's guessed family.
 pub fn names(bytes: &[u8]) -> Result<(String, String), String> {
+    let (family, postscript, _) = names_with_full(bytes)?;
+    Ok((family, postscript))
+}
+
+/// Family, PostScript name, and full font name from the font program.
+pub fn names_with_full(bytes: &[u8]) -> Result<(String, String, String), String> {
     use skrifa::string::StringId;
     validate(bytes)?;
+    let ttf_buf;
+    let bytes = if bytes.starts_with(b"ttcf") {
+        ttf_buf = extract_ttc_face(bytes, 0)?;
+        &ttf_buf
+    } else {
+        bytes
+    };
     let f = FontRef::new(bytes).map_err(|e| e.to_string())?;
     let name = |id| {
         f.localized_strings(id)
@@ -106,15 +207,23 @@ pub fn names(bytes: &[u8]) -> Result<(String, String), String> {
             .map(|s| s.to_string())
             .filter(|s| !s.is_empty() && s.len() <= 128)
     };
-    let family = name(StringId::FAMILY_NAME).ok_or("the font has no family name")?;
+    let family = name(StringId::TYPOGRAPHIC_FAMILY_NAME).or_else(|| name(StringId::FAMILY_NAME)).ok_or("the font has no family name")?;
     let postscript = name(StringId::POSTSCRIPT_NAME).unwrap_or_else(|| family.replace(' ', ""));
-    Ok((family, postscript))
+    let full = name(StringId::FULL_NAME).unwrap_or_else(|| family.clone());
+    Ok((family, postscript, full))
 }
 
 /// A selected external font is document input. Require its own open-licence declaration;
 /// never turn a proprietary system-interface fallback into an exported PDF font.
 pub fn validate_document_input(bytes: &[u8]) -> Result<(), String> {
     use skrifa::string::StringId;
+    let ttf_buf;
+    let bytes = if bytes.starts_with(b"ttcf") {
+        ttf_buf = extract_ttc_face(bytes, 0)?;
+        &ttf_buf
+    } else {
+        bytes
+    };
     let (family, _) = names(bytes)?;
     let key = face_key(&family);
     if ["sourcehan", "sourceserif", "sourcesans", "notosanscjk", "notoserifcjk"].iter().any(|n| key.starts_with(n)) {
@@ -142,7 +251,14 @@ pub fn validate(bytes: &[u8]) -> Result<(), String> {
     if bytes.len() > 16 << 20 {
         return Err("the selected font exceeds 16 MiB".into());
     }
-    let font = FontRef::new(bytes).map_err(|_| "select a standalone TrueType/OpenType font (not a font collection)")?;
+    let ttf_buf;
+    let bytes = if bytes.starts_with(b"ttcf") {
+        ttf_buf = extract_ttc_face(bytes, 0)?;
+        &ttf_buf
+    } else {
+        bytes
+    };
+    let font = FontRef::new(bytes).map_err(|_| "select a standalone TrueType/OpenType font")?;
     if font.fvar().is_ok() {
         return Err("select a static instance of this variable font before embedding".into());
     }
@@ -173,6 +289,13 @@ fn stream(doc: &mut Document, bytes: Vec<u8>) -> Object {
 /// /CIDToGIDMap and widths agree, including supplementary characters, so reopening needs no
 /// installed font. Keeping the full program also lets subsequent edits add other glyphs.
 pub fn embed(doc: &mut Document, fonts: &mut Dict, bytes: &[u8], family: &str) -> Result<String, String> {
+    let ttf_buf;
+    let bytes = if bytes.starts_with(b"ttcf") {
+        ttf_buf = extract_ttc_face(bytes, 0)?;
+        &ttf_buf
+    } else {
+        bytes
+    };
     validate(bytes)?;
     let font = FontRef::new(bytes).map_err(|e| e.to_string())?;
     let mappings: Vec<_> = font
@@ -193,6 +316,13 @@ pub fn embed_mapping(
     family: &str,
     mappings: &[(String, skrifa::GlyphId)],
 ) -> Result<String, String> {
+    let ttf_buf;
+    let bytes = if bytes.starts_with(b"ttcf") {
+        ttf_buf = extract_ttc_face(bytes, 0)?;
+        &ttf_buf
+    } else {
+        bytes
+    };
     validate(bytes)?;
     if mappings.len() > 65_534 || mappings.iter().any(|(s, _)| s.len() > 4096) {
         return Err("shaped font mapping exceeds its budget".into());
@@ -479,5 +609,25 @@ mod tests {
         let programs = doc.scan_objects().filter(|(_, o)| matches!(o.as_ref(), Object::Stream(s) if s.dict.get(b"PCFullFont").is_some())).count();
         assert_eq!(programs, 1, "one program for both pages");
         assert!(doc.scan_objects().count() > objects, "the second page gets its own resource");
+    }
+
+    #[test]
+    fn ttc_extraction_produces_valid_standalone_font() {
+        #[cfg(windows)]
+        {
+            let angsana = std::path::Path::new("C:/Windows/Fonts/angsana.ttc");
+            if angsana.exists() {
+                let bytes = std::fs::read(angsana).unwrap();
+                let count = ttc_face_count(&bytes);
+                assert_eq!(count, 8);
+                let ttf0 = extract_ttc_face(&bytes, 0).unwrap();
+                validate(&ttf0).unwrap();
+                validate_document_input(&ttf0).unwrap();
+                let (family, ps, full) = names_with_full(&ttf0).unwrap();
+                assert_eq!(family, "Angsana New");
+                assert_eq!(ps, "AngsanaNew");
+                assert_eq!(full, "Angsana New");
+            }
+        }
     }
 }

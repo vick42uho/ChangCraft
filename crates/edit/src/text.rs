@@ -151,6 +151,13 @@ pub fn text_editor_fonts(doc: &Document, page: usize) -> Result<Vec<TextEditorFo
 /// Load an explicit full face into this page's resources. Nothing on the page is replaced;
 /// the new resource can complete matching source subsets or be chosen in a text style.
 pub fn register_text_font(doc: &mut Document, page: usize, bytes: &[u8]) -> Result<String, EditError> {
+    let ttf_buf;
+    let bytes = if bytes.starts_with(b"ttcf") {
+        ttf_buf = pdfcraft_fonts::embedding::extract_ttc_face(bytes, 0).map_err(EditError::Invalid)?;
+        &ttf_buf
+    } else {
+        bytes
+    };
     pdfcraft_fonts::embedding::validate_document_input(bytes).map_err(EditError::Invalid)?;
     let (_, postscript) = pdfcraft_fonts::embedding::names(bytes).map_err(EditError::Invalid)?;
     let p = page_dict(doc, page)?;

@@ -549,9 +549,9 @@ fn format_section(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
             }
             Some(FontChoice::Load) => app.pick_files(crate::files::FilePurpose::TextFont { page: ed.page }, false),
             #[cfg(not(target_arch = "wasm32"))]
-            Some(FontChoice::Installed(path)) => app.use_paths(crate::files::FilePurpose::TextFont { page: ed.page }, &[path]),
+            Some(FontChoice::Installed(path, index)) => app.use_installed_font(ed.page, &path, index),
             #[cfg(target_arch = "wasm32")]
-            Some(FontChoice::Installed(_)) => {}
+            Some(FontChoice::Installed(_, _)) => {}
             None => {}
         }
         if changed {
@@ -596,8 +596,8 @@ fn format_section(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
                 app.pick_files(crate::files::FilePurpose::TextFont { page }, false);
             }
             #[cfg(not(target_arch = "wasm32"))]
-            if let Some(crate::format_text_ui::FontChoice::Installed(path)) = out.font {
-                app.use_paths(crate::files::FilePurpose::TextFont { page }, &[path]);
+            if let Some(crate::format_text_ui::FontChoice::Installed(path, index)) = out.font {
+                app.use_installed_font(page, &path, index);
             }
             if style != text {
                 // The reusable style follows the selection only when the edit took, so a refused one adds nothing odd later.
@@ -615,8 +615,8 @@ fn format_section(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
                 app.pick_files(crate::files::FilePurpose::TextFont { page }, false);
             }
             #[cfg(not(target_arch = "wasm32"))]
-            if let Some(crate::format_text_ui::FontChoice::Installed(path)) = out.font {
-                app.use_paths(crate::files::FilePurpose::TextFont { page }, &[path]);
+            if let Some(crate::format_text_ui::FontChoice::Installed(path, index)) = out.font {
+                app.use_installed_font(page, &path, index);
             }
             app.text_style = style;
         }
