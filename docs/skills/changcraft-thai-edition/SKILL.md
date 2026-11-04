@@ -41,14 +41,19 @@ All contributors and AI agents working on this codebase **must** adhere strictly
   - Line wraps prefer existing spaces when present; if an oversized Thai word exceeds line width, cluster-aware emergency wrap activates (`crates/edit/src/text_regions.rs`).
 
 ### 2.3 TrueType/OpenType Subsetting & Embedding (Type0 / CIDFontType2)
-- **Files**: `crates/fonts/src/embedding.rs`, `crates/fonts/src/lib.rs`.
+- **Files**: `crates/fonts/src/embedding.rs`, `crates/fonts/src/lib.rs`, `crates/engine/src/text_fonts.rs`.
+- **TTC (TrueType Collection) Extraction for Angsana New, Cordia, Browallia**:
+  - Windows packages classic Thai fonts in `.ttc` files (`angsana.ttc`, `cordia.ttc`, `browalia.ttc`).
+  - `extract_ttc_face(bytes, index)` unpacks any specific face from a `.ttc` into a standalone TrueType font binary on-the-fly.
+  - This preserves `fsType = 0x0008` (Editable Embedding) without violating copyright, since fonts are read from the user's local Windows installation at runtime.
 - **Key Mechanics**:
-  - Embedded Thai fonts (`Sarabun`, `Noto Sans Thai`, `IBM Plex Sans Thai`) are subsetted and embedded as PDF `Type0` composite fonts with `Identity-H` encoding and a `ToUnicode` CMap.
+  - Embedded Thai fonts (`Sarabun`, `Noto Sans Thai`, `IBM Plex Sans Thai`, plus discovered system fonts like `Angsana New`) are subsetted and embedded as PDF `Type0` composite fonts with `Identity-H` encoding and a `ToUnicode` CMap.
   - This ensures small PDF size, high fidelity across all PDF viewers (Edge, Acrobat, Preview), and copy/search capability.
-  - **Bold/Italic Preservation**: When editing text in `crates/edit/src/text.rs`, if the original text was bold or italic, the engine maintains the bold/italic variant (`Sarabun-Bold`, `NotoSansThai-Bold`) rather than dropping to regular.
+  - **Bold/Italic Preservation**: When editing text in `crates/edit/src/text.rs`, if the original text was bold or italic, the engine maintains the bold/italic variant (`Sarabun-Bold`, `NotoSansThai-Bold`, `AngsanaNew-Bold`) rather than dropping to regular.
   - **Font Name Cleaning & Deduplication**:
     - Random 6-letter subset prefixes (`BAAAAA+`, `AAAAAA+`) are stripped when displaying font pickers in `crates/ui-egui/src/format_text_ui.rs`.
     - Duplicate font family entries in UI dropdowns are deduplicated by postscript/family name.
+    - System Thai fonts (`Angsana New`, `Cordia New`, `Browallia New`, `Kanit`, `Prompt`, `TH SarabunPSK`) are pinned directly under `🇹🇭 ฟอนต์ไทยในเครื่อง (Installed Thai Fonts)` in the UI dropdown.
 
 ### 2.4 Forms (AcroForms) & Annotations (FreeText, Watermarks, Header/Footer)
 - **Files**: `crates/forms/src/appearance.rs`, `crates/annot/src/appearance.rs`.
