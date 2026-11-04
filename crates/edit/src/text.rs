@@ -1825,12 +1825,15 @@ fn source_family(base_font: &str) -> crate::added::Family {
         crate::added::Family::NotoSansThai
     } else if name.contains("ibmplex") {
         crate::added::Family::IBMPlexSansThai
+    } else if name.contains("angsana") {
+        crate::added::Family::AngsanaNew
+    } else if name.contains("cordia") {
+        crate::added::Family::CordiaNew
+    } else if name.contains("browallia") || name.contains("browalia") {
+        crate::added::Family::BrowalliaNew
     } else if name.contains("thai")
         || name.contains("sarabun")
-        || name.contains("angsana")
-        || name.contains("cordia")
         || name.contains("dillenia")
-        || name.contains("browallia")
         || name.contains("freesia")
         || name.contains("iris")
         || name.contains("jasmine")

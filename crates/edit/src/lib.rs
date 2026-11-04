@@ -825,6 +825,9 @@ pub fn add_header_footer(doc: &mut Document, pages: &[usize], hf: &HeaderFooter,
             added::Family::Sarabun => "PCSarabun",
             added::Family::NotoSansThai => "PCNotoThai",
             added::Family::IBMPlexSansThai => "PCIBMPlexThai",
+            added::Family::AngsanaNew => "PCAngsana",
+            added::Family::CordiaNew => "PCCordia",
+            added::Family::BrowalliaNew => "PCBrowallia",
         };
         let base = hf.font.base_font(false, false);
         let resource = free_font_name(doc, &page_fonts(doc, page), preferred, base);
@@ -834,6 +837,9 @@ pub fn add_header_footer(doc: &mut Document, pages: &[usize], hf: &HeaderFooter,
         let thai_script = match hf.font {
             added::Family::NotoSansThai => pdfcraft_fonts::ShapedScript::ThaiNoto,
             added::Family::IBMPlexSansThai => pdfcraft_fonts::ShapedScript::ThaiIBMPlex,
+            added::Family::AngsanaNew => pdfcraft_fonts::ShapedScript::ThaiAngsana,
+            added::Family::CordiaNew => pdfcraft_fonts::ShapedScript::ThaiCordia,
+            added::Family::BrowalliaNew => pdfcraft_fonts::ShapedScript::ThaiBrowallia,
             _ => pdfcraft_fonts::ShapedScript::Thai,
         };
         for (slot, template) in hf.text.iter().enumerate() {
@@ -949,6 +955,9 @@ pub fn add_watermark(doc: &mut Document, pages: &[usize], wm: &Watermark, replac
         let thai_script = match wm.font {
             added::Family::NotoSansThai => pdfcraft_fonts::ShapedScript::ThaiNoto,
             added::Family::IBMPlexSansThai => pdfcraft_fonts::ShapedScript::ThaiIBMPlex,
+            added::Family::AngsanaNew => pdfcraft_fonts::ShapedScript::ThaiAngsana,
+            added::Family::CordiaNew => pdfcraft_fonts::ShapedScript::ThaiCordia,
+            added::Family::BrowalliaNew => pdfcraft_fonts::ShapedScript::ThaiBrowallia,
             _ => pdfcraft_fonts::ShapedScript::Thai,
         };
         if has_thai {

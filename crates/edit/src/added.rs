@@ -29,6 +29,9 @@ pub enum Family {
     Sarabun,
     NotoSansThai,
     IBMPlexSansThai,
+    AngsanaNew,
+    CordiaNew,
+    BrowalliaNew,
 }
 
 impl Family {
@@ -40,6 +43,9 @@ impl Family {
             Family::Sarabun => "Sarabun (สารบรรณ)",
             Family::NotoSansThai => "Noto Sans Thai",
             Family::IBMPlexSansThai => "IBM Plex Sans Thai",
+            Family::AngsanaNew => "Angsana New (อังศนา)",
+            Family::CordiaNew => "Cordia New (คอร์เดีย)",
+            Family::BrowalliaNew => "Browallia New (บราวเวลเลีย)",
         }
     }
 
@@ -50,6 +56,18 @@ impl Family {
             (Family::Sarabun, true, false) => "Sarabun-Bold",
             (Family::Sarabun, false, true) => "Sarabun-Italic",
             (Family::Sarabun, true, true) => "Sarabun-BoldItalic",
+            (Family::AngsanaNew, false, false) => "AngsanaNew",
+            (Family::AngsanaNew, true, false) => "AngsanaNew-Bold",
+            (Family::AngsanaNew, false, true) => "AngsanaNew-Italic",
+            (Family::AngsanaNew, true, true) => "AngsanaNew-BoldItalic",
+            (Family::CordiaNew, false, false) => "CordiaNew",
+            (Family::CordiaNew, true, false) => "CordiaNew-Bold",
+            (Family::CordiaNew, false, true) => "CordiaNew-Italic",
+            (Family::CordiaNew, true, true) => "CordiaNew-BoldItalic",
+            (Family::BrowalliaNew, false, false) => "BrowalliaNew",
+            (Family::BrowalliaNew, true, false) => "BrowalliaNew-Bold",
+            (Family::BrowalliaNew, false, true) => "BrowalliaNew-Italic",
+            (Family::BrowalliaNew, true, true) => "BrowalliaNew-BoldItalic",
             (Family::NotoSansThai, false, false) => "NotoSansThai",
             (Family::NotoSansThai, true, false) => "NotoSansThai-Bold",
             (Family::NotoSansThai, false, true) => "NotoSansThai-Italic",
@@ -78,7 +96,15 @@ impl Family {
         let s_lower = s.to_ascii_lowercase();
         let family = if s_lower.contains("notosansthai") || s_lower.contains("noto-sans-thai") {
             Family::NotoSansThai
-        } else if s_lower.contains("sarabun") || s_lower.contains("angsana") {
+        } else if s_lower.contains("ibmplex") || s_lower.contains("ibm-plex") {
+            Family::IBMPlexSansThai
+        } else if s_lower.contains("angsana") {
+            Family::AngsanaNew
+        } else if s_lower.contains("cordia") {
+            Family::CordiaNew
+        } else if s_lower.contains("browallia") || s_lower.contains("browalia") {
+            Family::BrowalliaNew
+        } else if s_lower.contains("sarabun") {
             Family::Sarabun
         } else if s.starts_with("Times") {
             Family::Times
@@ -99,6 +125,9 @@ impl Family {
             let script = match self {
                 Family::NotoSansThai => ShapedScript::ThaiNoto,
                 Family::IBMPlexSansThai => ShapedScript::ThaiIBMPlex,
+                Family::AngsanaNew => ShapedScript::ThaiAngsana,
+                Family::CordiaNew => ShapedScript::ThaiCordia,
+                Family::BrowalliaNew => ShapedScript::ThaiBrowallia,
                 _ => ShapedScript::Thai,
             };
             if let Ok(clusters) = pdfcraft_fonts::shape_script(s, false, script) {
@@ -111,10 +140,10 @@ impl Family {
     /// The standard-14 face this family means at the given style.
     pub fn std14(self, bold: bool, italic: bool) -> Std14 {
         match (self, bold, italic) {
-            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai, false, false) => Std14::Helvetica,
-            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai, true, false) => Std14::HelveticaBold,
-            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai, false, true) => Std14::HelveticaOblique,
-            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai, true, true) => Std14::HelveticaBoldOblique,
+            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew, false, false) => Std14::Helvetica,
+            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew, true, false) => Std14::HelveticaBold,
+            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew, false, true) => Std14::HelveticaOblique,
+            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew, true, true) => Std14::HelveticaBoldOblique,
             (Family::Courier, false, false) => Std14::Courier,
             (Family::Courier, true, false) => Std14::CourierBold,
             (Family::Courier, false, true) => Std14::CourierOblique,
@@ -490,6 +519,9 @@ fn shaped_by_a_face(t: &AddedText) -> bool {
             && (t.family == Family::Sarabun
                 || t.family == Family::NotoSansThai
                 || t.family == Family::IBMPlexSansThai
+                || t.family == Family::AngsanaNew
+                || t.family == Family::CordiaNew
+                || t.family == Family::BrowalliaNew
                 || t.text.chars().any(is_thai)))
 }
 
@@ -573,12 +605,18 @@ fn shaped_layout(t: &AddedText, line: &str, rtl: bool) -> Result<(Vec<Piece>, f6
                         let actual_script = match t.family {
                             Family::NotoSansThai => ShapedScript::ThaiNoto,
                             Family::IBMPlexSansThai => ShapedScript::ThaiIBMPlex,
+                            Family::AngsanaNew => ShapedScript::ThaiAngsana,
+                            Family::CordiaNew => ShapedScript::ThaiCordia,
+                            Family::BrowalliaNew => ShapedScript::ThaiBrowallia,
                             _ => ShapedScript::Thai,
                         };
                         pdfcraft_fonts::shape_script(&s, false, actual_script).map_err(|e| thai_error(e, &s))?
                     }
                     ShapedScript::ThaiNoto => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiNoto).map_err(|e| thai_error(e, &s))?,
                     ShapedScript::ThaiIBMPlex => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiIBMPlex).map_err(|e| thai_error(e, &s))?,
+                    ShapedScript::ThaiAngsana => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiAngsana).map_err(|e| thai_error(e, &s))?,
+                    ShapedScript::ThaiCordia => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiCordia).map_err(|e| thai_error(e, &s))?,
+                    ShapedScript::ThaiBrowallia => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiBrowallia).map_err(|e| thai_error(e, &s))?,
                 };
                 Piece::Shaped(shaped)
             } else if run_rtl {
@@ -704,7 +742,12 @@ fn draw_laid_shaped(
                 entry.insert(outline(c.script, *id).map_err(|e| match c.script {
                     ShapedScript::Arabic => arabic_error(e, &c.text),
                     ShapedScript::Hebrew => hebrew_error(e, &c.text),
-                    ShapedScript::Thai | ShapedScript::ThaiNoto | ShapedScript::ThaiIBMPlex => thai_error(e, &c.text),
+                    ShapedScript::Thai
+                    | ShapedScript::ThaiNoto
+                    | ShapedScript::ThaiIBMPlex
+                    | ShapedScript::ThaiAngsana
+                    | ShapedScript::ThaiCordia
+                    | ShapedScript::ThaiBrowallia => thai_error(e, &c.text),
                 })?);
             }
         }
@@ -847,6 +890,9 @@ fn type3_shaped(doc: &mut Document, clusters: &[&ShapedCluster], outlines: &Hash
                 ShapedScript::Thai => "Thai",
                 ShapedScript::ThaiNoto => "Noto Sans Thai",
                 ShapedScript::ThaiIBMPlex => "IBM Plex Sans Thai",
+                ShapedScript::ThaiAngsana => "Angsana New",
+                ShapedScript::ThaiCordia => "Cordia New",
+                ShapedScript::ThaiBrowallia => "Browallia New",
             },
             |f| f.family,
         ),

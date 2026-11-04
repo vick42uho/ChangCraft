@@ -485,7 +485,34 @@ impl PdfCraftApp {
                     return;
                 }
                 let Some((index, id)) = self.active_ids() else { return };
-                let Some(mut ed) = self.views[index].line_editor.clone().filter(|ed| ed.page == page) else { return };
+                let Some(mut ed) = self.views[index].line_editor.clone().filter(|ed| ed.page == page) else {
+                    if let Some((sel_page, sel_idx)) = self.views[index].content.selected
+                        && sel_page == page
+                        && let Some(doc) = self.session.get(id)
+                        && let Some(a) = doc.added().iter().filter(|a| a.page == page).nth(sel_idx)
+                        && let pdfcraft_engine::AddedContent::Text(mut text) = a.content.clone()
+                    {
+                        let names = pdfcraft_fonts::embedding::names(&bytes).ok();
+                        let family_name = names.map(|(fam, _)| fam.to_ascii_lowercase()).unwrap_or_default();
+                        if family_name.contains("angsana") {
+                            text.family = pdfcraft_engine::FontFamily::AngsanaNew;
+                        } else if family_name.contains("cordia") {
+                            text.family = pdfcraft_engine::FontFamily::CordiaNew;
+                        } else if family_name.contains("browallia") || family_name.contains("browalia") {
+                            text.family = pdfcraft_engine::FontFamily::BrowalliaNew;
+                        } else if family_name.contains("sarabun") {
+                            text.family = pdfcraft_engine::FontFamily::Sarabun;
+                        } else if family_name.contains("noto") {
+                            text.family = pdfcraft_engine::FontFamily::NotoSansThai;
+                        } else if family_name.contains("ibm") {
+                            text.family = pdfcraft_engine::FontFamily::IBMPlexSansThai;
+                        }
+                        if self.apply_edit(pdfcraft_engine::Edit::UpdateContent { page, index: sel_idx, content: pdfcraft_engine::AddedContent::Text(text.clone()) }) {
+                            self.text_style = pdfcraft_engine::AddedText { text: String::new(), rect: [0.0; 4], ..text };
+                        }
+                    }
+                    return;
+                };
                 // The font just loaded is the one the user wants: apply it to the paragraph, as
                 // choosing it from the document-font menu does, instead of only registering it (#2591).
                 let resource = self.session.get(id).and_then(|doc| {

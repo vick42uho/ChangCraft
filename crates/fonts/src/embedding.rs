@@ -17,11 +17,14 @@ pub fn face_key(name: &str) -> String {
         let digits_end = raw.chars().skip(1).take_while(|c| c.is_ascii_digit()).count() + 1;
         raw = raw[digits_end..].to_string();
     }
-    if raw.contains("sarabun")
+    if raw.contains("angsana") {
+        "angsana".to_string()
+    } else if raw.contains("cordia") {
+        "cordia".to_string()
+    } else if raw.contains("browallia") || raw.contains("browalia") {
+        "browallia".to_string()
+    } else if raw.contains("sarabun")
         || raw.contains("dillenia")
-        || raw.contains("angsana")
-        || raw.contains("cordia")
-        || raw.contains("browallia")
         || raw.contains("freesia")
         || raw.contains("iris")
         || raw.contains("jasmine")
@@ -35,6 +38,69 @@ pub fn face_key(name: &str) -> String {
         "ibmplex".to_string()
     } else {
         raw
+    }
+}
+
+/// Load the matching Thai TrueType font program from Windows system fonts if available
+/// (e.g. Angsana, Cordia, Browallia, Leelawadee, Tahoma).
+pub fn system_thai_font_program(name: &str, is_bold: bool, is_italic: bool) -> Option<(Vec<u8>, String)> {
+    #[cfg(windows)]
+    {
+        let name_lower = name.to_ascii_lowercase();
+        let is_bold = is_bold || name_lower.contains("bold") || name_lower.contains("gras") || name_lower.contains("negreta");
+        let is_italic = is_italic || name_lower.contains("italic") || name_lower.contains("italique") || name_lower.contains("cursiva") || name_lower.contains("oblique");
+        let is_upc = name_lower.contains("upc");
+
+        let (file, base_ps) = if name_lower.contains("angsana") {
+            ("angsana.ttc", if is_upc { "AngsanaUPC" } else { "AngsanaNew" })
+        } else if name_lower.contains("cordia") {
+            ("cordia.ttc", if is_upc { "CordiaUPC" } else { "CordiaNew" })
+        } else if name_lower.contains("browallia") || name_lower.contains("browalia") {
+            ("browalia.ttc", if is_upc { "BrowalliaUPC" } else { "BrowalliaNew" })
+        } else if name_lower.contains("tahoma") {
+            let f = if is_bold { "tahomabd.ttf" } else { "tahoma.ttf" };
+            let ps = if is_bold { "Tahoma-Bold" } else { "Tahoma" };
+            let windir = std::env::var_os("WINDIR")?;
+            let font_path = std::path::PathBuf::from(windir).join("Fonts").join(f);
+            let bytes = std::fs::read(&font_path).ok()?;
+            return Some((bytes, ps.to_string()));
+        } else if name_lower.contains("leelawadee") {
+            let windir = std::env::var_os("WINDIR")?;
+            let font_path = std::path::PathBuf::from(windir).join("Fonts").join("leelawad.ttf");
+            let bytes = std::fs::read(&font_path).ok()?;
+            return Some((bytes, "Leelawadee".to_string()));
+        } else {
+            return None;
+        };
+
+        let index = match (is_upc, is_bold, is_italic) {
+            (true, true, true) => 6,
+            (true, true, false) => 5,
+            (true, false, true) => 7,
+            (true, false, false) => 4,
+            (false, true, true) => 2,
+            (false, true, false) => 1,
+            (false, false, true) => 3,
+            (false, false, false) => 0,
+        };
+
+        let postscript = match (is_bold, is_italic) {
+            (true, true) => format!("{base_ps}-BoldItalic"),
+            (true, false) => format!("{base_ps}-Bold"),
+            (false, true) => format!("{base_ps}-Italic"),
+            (false, false) => base_ps.to_string(),
+        };
+
+        let windir = std::env::var_os("WINDIR")?;
+        let font_path = std::path::PathBuf::from(windir).join("Fonts").join(file);
+        let bytes = std::fs::read(&font_path).ok()?;
+        let ttf = extract_ttc_face(&bytes, index).ok()?;
+        Some((ttf, postscript))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (name, is_bold, is_italic);
+        None
     }
 }
 

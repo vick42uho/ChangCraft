@@ -356,6 +356,15 @@ fn shape_source(
     {
         return Ok(Some((face.bytes.to_vec(), shaped, family)));
     }
+    let is_bold = family.to_ascii_lowercase().contains("bold");
+    let is_italic = family.to_ascii_lowercase().contains("italic");
+    if let Some((ttf, ps)) = pdfcraft_fonts::embedding::system_thai_font_program(&family, is_bold, is_italic) {
+        if pdfcraft_fonts::embedding::covers(&ttf, text)
+            && let Ok(shaped) = pdfcraft_fonts::source_shaping::shape(&ttf, text)
+        {
+            return Ok(Some((ttf, shaped, ps)));
+        }
+    }
     if text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')) {
         let is_bold = family.to_ascii_lowercase().contains("bold");
         let thai_faces = pdfcraft_fonts::ui_thai_fonts();
@@ -517,11 +526,10 @@ pub(super) fn rewrite_styled_block(
             styled_spans.push((start..end, index));
         }
     }
-    let lines = styled_lines.as_slice();
     let p = page_dict(doc, page)?;
     let mut res = p.dict.get(b"Resources").and_then(|r| doc.resolve(r).as_dict().cloned()).unwrap_or_default();
     let mut fonts = res.get(b"Font").and_then(|r| doc.resolve(r).as_dict().cloned()).unwrap_or_default();
-    for line in lines.iter().filter(|line| line.font.starts_with("PCRange")) {
+    for line in styled_lines.iter().filter(|line| line.font.starts_with("PCRange")) {
         let mut f = Dict::new();
         f.set(b"Type".to_vec(), Object::name("Font"));
         f.set(b"Subtype".to_vec(), Object::name("Type1"));
@@ -535,6 +543,12 @@ pub(super) fn rewrite_styled_block(
             metrics.insert(String::from_utf8_lossy(name).into_owned(), Metrics::from_dict(doc, font));
         }
     }
+    for line in styled_lines.iter_mut() {
+        if let Some(m) = metrics.get(&line.font) {
+            line.base_font = m.base_font.clone();
+        }
+    }
+    let lines = styled_lines.as_slice();
     for index in &block.lines {
         if let Some(line) = lines.get(*index)
             && !metrics.contains_key(&line.font)
@@ -576,8 +590,90 @@ pub(super) fn rewrite_styled_block(
                 // If the selected resource is a subset that cannot encode the new text (or is shaped/Thai),
                 // fall back to embedding the matching full face instead of returning an error.
                 let base = metrics.get(resource).map(|m| m.base_font.as_str()).unwrap_or(resource.as_str());
-                let matching = pdfcraft_fonts::embedding::matching_faces(base);
-                let face = matching.into_iter().find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text));
+                let is_bold = base.to_ascii_lowercase().contains("bold") || source.bold;
+                let is_italic = base.to_ascii_lowercase().contains("italic") || source.italic;
+                if let Some((ttf, ps)) = pdfcraft_fonts::embedding::system_thai_font_program(base, is_bold, is_italic) {
+                    let key = ps.clone();
+                    if let Some(name) = full_faces.get(&key) {
+                        Some(name.clone())
+                    } else {
+                        let name = pdfcraft_fonts::embedding::embed(doc, &mut fonts, &ttf, &ps).map_err(EditError::Invalid)?;
+                        let font = fonts
+                            .get(name.as_bytes())
+                            .and_then(|f| doc.dict(f))
+                            .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+                        metrics.insert(name.clone(), Metrics::from_dict(doc, &font));
+                        full_faces.insert(key, name.clone());
+                        Some(name)
+                    }
+                } else {
+                    let matching = pdfcraft_fonts::embedding::matching_faces(base);
+                    let face = matching.into_iter().find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text))
+                        .or_else(|| {
+                            if span_text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')) {
+                                let fallback_query = if is_bold { "sarabun-bold" } else { "sarabun" };
+                                pdfcraft_fonts::embedding::matching_faces(fallback_query)
+                                    .into_iter()
+                                    .find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text))
+                            } else {
+                                None
+                            }
+                        });
+                    if let Some(face) = face {
+                        let key = face.name();
+                        if let Some(name) = full_faces.get(&key) {
+                            Some(name.clone())
+                        } else {
+                            let name = pdfcraft_fonts::embedding::embed(doc, &mut fonts, face.bytes, face.family).map_err(EditError::Invalid)?;
+                            let font = fonts
+                                .get(name.as_bytes())
+                                .and_then(|f| doc.dict(f))
+                                .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+                            metrics.insert(name.clone(), Metrics::from_dict(doc, &font));
+                            full_faces.insert(key, name.clone());
+                            Some(name)
+                        }
+                    } else {
+                        return Err(EditError::Invalid(format!("the selected font resource {resource} cannot show text")));
+                    }
+                }
+            }
+        } else if pdfcraft_fonts::source_shaping::required(span_text) {
+            let is_bold = source.bold || source.base_font.to_ascii_lowercase().contains("bold");
+            let is_italic = source.italic || source.base_font.to_ascii_lowercase().contains("italic");
+            let font_query = if is_bold && !source.base_font.to_ascii_lowercase().contains("bold") {
+                format!("{}-Bold", source.base_font)
+            } else {
+                source.base_font.clone()
+            };
+            if let Some((ttf, ps)) = pdfcraft_fonts::embedding::system_thai_font_program(&font_query, is_bold, is_italic) {
+                let key = ps.clone();
+                if let Some(name) = full_faces.get(&key) {
+                    Some(name.clone())
+                } else {
+                    let name = pdfcraft_fonts::embedding::embed(doc, &mut fonts, &ttf, &ps).map_err(EditError::Invalid)?;
+                    let font = fonts
+                        .get(name.as_bytes())
+                        .and_then(|f| doc.dict(f))
+                        .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+                    metrics.insert(name.clone(), Metrics::from_dict(doc, &font));
+                    full_faces.insert(key, name.clone());
+                    Some(name)
+                }
+            } else {
+                let face = pdfcraft_fonts::embedding::matching_faces(&font_query)
+                    .into_iter()
+                    .find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text))
+                    .or_else(|| {
+                        if span_text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')) {
+                            let fallback_query = if is_bold { "sarabun-bold" } else { "sarabun" };
+                            pdfcraft_fonts::embedding::matching_faces(fallback_query)
+                                .into_iter()
+                                .find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text))
+                        } else {
+                            None
+                        }
+                    });
                 if let Some(face) = face {
                     let key = face.name();
                     if let Some(name) = full_faces.get(&key) {
@@ -592,47 +688,11 @@ pub(super) fn rewrite_styled_block(
                         full_faces.insert(key, name.clone());
                         Some(name)
                     }
+                } else if metrics.get(&source.font).is_some_and(|m| source_encodes(m, span_text)) {
+                    Some(source.font.clone())
                 } else {
-                    return Err(EditError::Invalid(format!("the selected font resource {resource} cannot show text")));
+                    None
                 }
-            }
-        } else if pdfcraft_fonts::source_shaping::required(span_text) {
-            let font_query = if source.bold && !source.base_font.to_ascii_lowercase().contains("bold") {
-                format!("{}-Bold", source.base_font)
-            } else {
-                source.base_font.clone()
-            };
-            let face = pdfcraft_fonts::embedding::matching_faces(&font_query)
-                .into_iter()
-                .find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text))
-                .or_else(|| {
-                    if span_text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')) {
-                        let fallback_query = if source.bold { "sarabun-bold" } else { "sarabun" };
-                        pdfcraft_fonts::embedding::matching_faces(fallback_query)
-                            .into_iter()
-                            .find(|f| pdfcraft_fonts::embedding::covers(f.bytes, span_text))
-                    } else {
-                        None
-                    }
-                });
-            if let Some(face) = face {
-                let key = face.name();
-                if let Some(name) = full_faces.get(&key) {
-                    Some(name.clone())
-                } else {
-                    let name = pdfcraft_fonts::embedding::embed(doc, &mut fonts, face.bytes, face.family).map_err(EditError::Invalid)?;
-                    let font = fonts
-                        .get(name.as_bytes())
-                        .and_then(|f| doc.dict(f))
-                        .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
-                    metrics.insert(name.clone(), Metrics::from_dict(doc, &font));
-                    full_faces.insert(key, name.clone());
-                    Some(name)
-                }
-            } else if metrics.get(&source.font).is_some_and(|m| source_encodes(m, span_text)) {
-                Some(source.font.clone())
-            } else {
-                None
             }
         } else if metrics.get(&source.font).is_some_and(|m| source_encodes(m, span_text)) {
             Some(source.font.clone())
@@ -658,6 +718,21 @@ pub(super) fn rewrite_styled_block(
                 pdfcraft_fonts::embedding::face_key(&m.base_font) == pdfcraft_fonts::embedding::face_key(&source.base_font) && source_encodes(m, &s)
             }) {
                 name.clone()
+            } else if let Some((ttf, ps)) = pdfcraft_fonts::embedding::system_thai_font_program(&source.base_font, source.bold, source.italic) {
+                let key = ps.clone();
+                let name = if let Some(name) = full_faces.get(&key) {
+                    name.clone()
+                } else {
+                    let name = pdfcraft_fonts::embedding::embed(doc, &mut fonts, &ttf, &ps).map_err(EditError::Invalid)?;
+                    let font = fonts
+                        .get(name.as_bytes())
+                        .and_then(|f| doc.dict(f))
+                        .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+                    metrics.insert(name.clone(), Metrics::from_dict(doc, &font));
+                    full_faces.insert(key, name.clone());
+                    name
+                };
+                name
             } else if let Some(face) =
                 pdfcraft_fonts::embedding::matching_faces(&source.base_font).into_iter().find(|f| pdfcraft_fonts::embedding::covers(f.bytes, &s))
             {
@@ -896,7 +971,8 @@ pub(super) fn rewrite_styled_block(
     let o = &lead.origin;
     for (row, _) in rows.iter().zip(&kept).filter(|(_, k)| !**k) {
         let text: String = row.iter().map(|v| v.0).collect();
-        if pdfcraft_fonts::source_shaping::required(&text) && row.first().is_some_and(|first| row.iter().any(|v| v.1 != first.1 || v.2 != first.2)) {
+        let is_bidi = text.chars().any(|c| matches!(u32::from(c), 0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF));
+        if is_bidi && row.first().is_some_and(|first| row.iter().any(|v| v.1 != first.1 || v.2 != first.2)) {
             return Err(EditError::Invalid(
                 "contextual/bidi text across font or style boundaries needs a uniform full-face row; mixed contextual runs are not yet supported"
                     .into(),

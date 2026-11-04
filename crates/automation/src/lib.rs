@@ -684,11 +684,17 @@ impl Automation {
                     style.offset = Some([dx.unwrap_or(0.0), dy.unwrap_or(0.0)]);
                 }
                 if let Some(f) = a.opt_str("font")? {
-                    let family = match f {
+                    let family = match f.to_ascii_lowercase().as_str() {
                         "helvetica" => pdfcraft_engine::FontFamily::Helvetica,
                         "times" => pdfcraft_engine::FontFamily::Times,
                         "courier" => pdfcraft_engine::FontFamily::Courier,
-                        other => return Err(ToolError::InvalidArgs(format!("unknown font {other:?} (helvetica, times, courier)"))),
+                        "sarabun" => pdfcraft_engine::FontFamily::Sarabun,
+                        "angsana" | "angsananew" => pdfcraft_engine::FontFamily::AngsanaNew,
+                        "cordia" | "cordianew" => pdfcraft_engine::FontFamily::CordiaNew,
+                        "browallia" | "browallianew" | "browalia" => pdfcraft_engine::FontFamily::BrowalliaNew,
+                        "notosansthai" | "noto" => pdfcraft_engine::FontFamily::NotoSansThai,
+                        "ibmplexsansthai" | "ibm" => pdfcraft_engine::FontFamily::IBMPlexSansThai,
+                        other => return Err(ToolError::InvalidArgs(format!("unknown font {other:?}"))),
                     };
                     style.family = Some((family, a.opt_bool("bold")?.unwrap_or(false), a.opt_bool("italic")?.unwrap_or(false)));
                 }
@@ -1311,12 +1317,15 @@ impl Automation {
                     hf.font_size = s;
                 }
                 hf.font = match a.opt_str("font")? {
-                    None | Some("Helvetica") => pdfcraft_engine::FontFamily::Helvetica,
-                    Some("Times") => pdfcraft_engine::FontFamily::Times,
-                    Some("Courier") => pdfcraft_engine::FontFamily::Courier,
-                    Some("Sarabun") => pdfcraft_engine::FontFamily::Sarabun,
-                    Some("NotoSansThai") => pdfcraft_engine::FontFamily::NotoSansThai,
-                    Some("IBMPlexSansThai") => pdfcraft_engine::FontFamily::IBMPlexSansThai,
+                    None | Some("Helvetica" | "helvetica") => pdfcraft_engine::FontFamily::Helvetica,
+                    Some("Times" | "times") => pdfcraft_engine::FontFamily::Times,
+                    Some("Courier" | "courier") => pdfcraft_engine::FontFamily::Courier,
+                    Some("Sarabun" | "sarabun") => pdfcraft_engine::FontFamily::Sarabun,
+                    Some("AngsanaNew" | "angsana" | "angsana_new") => pdfcraft_engine::FontFamily::AngsanaNew,
+                    Some("CordiaNew" | "cordia" | "cordia_new") => pdfcraft_engine::FontFamily::CordiaNew,
+                    Some("BrowalliaNew" | "browallia" | "browallia_new" | "browalia") => pdfcraft_engine::FontFamily::BrowalliaNew,
+                    Some("NotoSansThai" | "noto" | "noto_sans_thai") => pdfcraft_engine::FontFamily::NotoSansThai,
+                    Some("IBMPlexSansThai" | "ibm" | "ibm_plex_sans_thai") => pdfcraft_engine::FontFamily::IBMPlexSansThai,
                     Some(other) => {
                         return Err(ToolError::InvalidArgs(format!("unrecognized font: {other:?}")));
                     }
@@ -1341,6 +1350,9 @@ impl Automation {
                 };
                 let font = match a.opt_str("font")? {
                     Some("Sarabun" | "sarabun") => pdfcraft_engine::FontFamily::Sarabun,
+                    Some("AngsanaNew" | "angsana" | "angsana_new") => pdfcraft_engine::FontFamily::AngsanaNew,
+                    Some("CordiaNew" | "cordia" | "cordia_new") => pdfcraft_engine::FontFamily::CordiaNew,
+                    Some("BrowalliaNew" | "browallia" | "browallia_new" | "browalia") => pdfcraft_engine::FontFamily::BrowalliaNew,
                     Some("NotoSansThai" | "noto" | "noto_sans_thai") => pdfcraft_engine::FontFamily::NotoSansThai,
                     Some("IBMPlexSansThai" | "ibm_plex" | "ibm_plex_sans_thai") => pdfcraft_engine::FontFamily::IBMPlexSansThai,
                     Some("Times" | "times") => pdfcraft_engine::FontFamily::Times,
@@ -2347,11 +2359,17 @@ fn parse_style_ranges(value: Option<&Value>) -> Result<Vec<pdfcraft_engine::Rang
                 .ok_or_else(|| Args::wrong("range", "nonnegative byte offsets"))?;
             let family = a
                 .opt_str("font")?
-                .map(|f| match f {
+                .map(|f| match f.to_ascii_lowercase().as_str() {
                     "helvetica" => Ok(pdfcraft_engine::FontFamily::Helvetica),
                     "times" => Ok(pdfcraft_engine::FontFamily::Times),
                     "courier" => Ok(pdfcraft_engine::FontFamily::Courier),
-                    _ => Err(Args::wrong("font", "helvetica, times or courier")),
+                    "sarabun" => Ok(pdfcraft_engine::FontFamily::Sarabun),
+                    "angsana" | "angsananew" => Ok(pdfcraft_engine::FontFamily::AngsanaNew),
+                    "cordia" | "cordianew" => Ok(pdfcraft_engine::FontFamily::CordiaNew),
+                    "browallia" | "browallianew" | "browalia" => Ok(pdfcraft_engine::FontFamily::BrowalliaNew),
+                    "noto" | "notosansthai" => Ok(pdfcraft_engine::FontFamily::NotoSansThai),
+                    "ibm" | "ibmplexsansthai" => Ok(pdfcraft_engine::FontFamily::IBMPlexSansThai),
+                    _ => Err(Args::wrong("font", "valid font family name")),
                 })
                 .transpose()?
                 .map(|f| -> Result<_> { Ok((f, a.opt_bool("bold")?.unwrap_or(false), a.opt_bool("italic")?.unwrap_or(false))) })

@@ -30,6 +30,9 @@ pub enum ShapedScript {
     Thai,
     ThaiNoto,
     ThaiIBMPlex,
+    ThaiAngsana,
+    ThaiCordia,
+    ThaiBrowallia,
 }
 
 impl ShapedScript {
@@ -40,8 +43,34 @@ impl ShapedScript {
             Self::Thai => crate::document_thai_font_named("Sarabun").or_else(crate::document_thai_font),
             Self::ThaiNoto => crate::document_thai_font_named("Noto Sans Thai").or_else(crate::document_thai_font),
             Self::ThaiIBMPlex => crate::document_thai_font_named("IBM Plex Sans Thai").or_else(crate::document_thai_font),
+            Self::ThaiAngsana | Self::ThaiCordia | Self::ThaiBrowallia => Self::Thai.font(),
         }
     }
+}
+
+fn load_system_thai_face(names: &[&str]) -> Option<&'static [u8]> {
+    #[cfg(windows)]
+    {
+        let win_dir = std::env::var_os("WINDIR")
+            .or_else(|| std::env::var_os("SystemRoot"))
+            .map_or_else(|| std::path::PathBuf::from(r"C:\Windows"), std::path::PathBuf::from);
+        let fonts_dir = win_dir.join("Fonts");
+        for name in names {
+            let path = fonts_dir.join(name);
+            if let Ok(file_bytes) = std::fs::read(&path) {
+                let ttf = if file_bytes.starts_with(b"ttcf") {
+                    crate::embedding::extract_ttc_face(&file_bytes, 0).ok()
+                } else {
+                    Some(file_bytes)
+                };
+                if let Some(ttf) = ttf {
+                    return Some(Box::leak(ttf.into_boxed_slice()));
+                }
+            }
+        }
+    }
+    let _ = names;
+    None
 }
 
 fn face(script: ShapedScript) -> Option<&'static (FontRef<'static>, ShaperData)> {
@@ -50,12 +79,51 @@ fn face(script: ShapedScript) -> Option<&'static (FontRef<'static>, ShaperData)>
     static THAI: OnceLock<Option<(FontRef<'static>, ShaperData)>> = OnceLock::new();
     static THAI_NOTO: OnceLock<Option<(FontRef<'static>, ShaperData)>> = OnceLock::new();
     static THAI_IBM_PLEX: OnceLock<Option<(FontRef<'static>, ShaperData)>> = OnceLock::new();
+    static THAI_ANGSANA: OnceLock<Option<(FontRef<'static>, ShaperData)>> = OnceLock::new();
+    static THAI_CORDIA: OnceLock<Option<(FontRef<'static>, ShaperData)>> = OnceLock::new();
+    static THAI_BROWALLIA: OnceLock<Option<(FontRef<'static>, ShaperData)>> = OnceLock::new();
+
+    match script {
+        ShapedScript::ThaiAngsana => {
+            let res = THAI_ANGSANA
+                .get_or_init(|| {
+                    let bytes = load_system_thai_face(&["angsana.ttc", "angsanau.ttf", "angsau.ttf", "angsana.ttf"])?;
+                    let font = FontRef::new(bytes).ok()?;
+                    let data = ShaperData::new(&font);
+                    Some((font, data))
+                });
+            return res.as_ref().or_else(|| face(ShapedScript::Thai));
+        }
+        ShapedScript::ThaiCordia => {
+            let res = THAI_CORDIA
+                .get_or_init(|| {
+                    let bytes = load_system_thai_face(&["cordia.ttc", "cordiau.ttf", "cordia.ttf"])?;
+                    let font = FontRef::new(bytes).ok()?;
+                    let data = ShaperData::new(&font);
+                    Some((font, data))
+                });
+            return res.as_ref().or_else(|| face(ShapedScript::Thai));
+        }
+        ShapedScript::ThaiBrowallia => {
+            let res = THAI_BROWALLIA
+                .get_or_init(|| {
+                    let bytes = load_system_thai_face(&["browalia.ttc", "browallia.ttc", "browau.ttf", "browa.ttf"])?;
+                    let font = FontRef::new(bytes).ok()?;
+                    let data = ShaperData::new(&font);
+                    Some((font, data))
+                });
+            return res.as_ref().or_else(|| face(ShapedScript::Thai));
+        }
+        _ => {}
+    }
+
     let cache = match script {
         ShapedScript::Arabic => &FACE,
         ShapedScript::Hebrew => &HEBREW,
         ShapedScript::Thai => &THAI,
         ShapedScript::ThaiNoto => &THAI_NOTO,
         ShapedScript::ThaiIBMPlex => &THAI_IBM_PLEX,
+        ShapedScript::ThaiAngsana | ShapedScript::ThaiCordia | ShapedScript::ThaiBrowallia => unreachable!(),
     };
     cache
         .get_or_init(|| {
@@ -93,6 +161,9 @@ pub fn thai_has(c: char) -> bool {
     face(ShapedScript::Thai).is_some_and(|(font, _)| font.charmap().map(c).is_some())
         || face(ShapedScript::ThaiNoto).is_some_and(|(font, _)| font.charmap().map(c).is_some())
         || face(ShapedScript::ThaiIBMPlex).is_some_and(|(font, _)| font.charmap().map(c).is_some())
+        || face(ShapedScript::ThaiAngsana).is_some_and(|(font, _)| font.charmap().map(c).is_some())
+        || face(ShapedScript::ThaiCordia).is_some_and(|(font, _)| font.charmap().map(c).is_some())
+        || face(ShapedScript::ThaiBrowallia).is_some_and(|(font, _)| font.charmap().map(c).is_some())
 }
 
 /// Shape Thai with grapheme clusters so Sara Am decomposition and stacked marks keep their
@@ -111,12 +182,23 @@ pub fn shape_script(text: &str, rtl: bool, kind: ShapedScript) -> Result<Vec<Sha
     buffer.set_script(match kind {
         ShapedScript::Arabic => script::ARABIC,
         ShapedScript::Hebrew => script::HEBREW,
-        ShapedScript::Thai | ShapedScript::ThaiNoto | ShapedScript::ThaiIBMPlex => script::THAI,
+        ShapedScript::Thai
+        | ShapedScript::ThaiNoto
+        | ShapedScript::ThaiIBMPlex
+        | ShapedScript::ThaiAngsana
+        | ShapedScript::ThaiCordia
+        | ShapedScript::ThaiBrowallia => script::THAI,
     });
     // Preserve the historical Arabic per-character mapping; Hebrew and Thai marks stay with their base.
     buffer.set_cluster_level(match kind {
         ShapedScript::Arabic => BufferClusterLevel::Characters,
-        ShapedScript::Hebrew | ShapedScript::Thai | ShapedScript::ThaiNoto | ShapedScript::ThaiIBMPlex => BufferClusterLevel::MonotoneGraphemes,
+        ShapedScript::Hebrew
+        | ShapedScript::Thai
+        | ShapedScript::ThaiNoto
+        | ShapedScript::ThaiIBMPlex
+        | ShapedScript::ThaiAngsana
+        | ShapedScript::ThaiCordia
+        | ShapedScript::ThaiBrowallia => BufferClusterLevel::MonotoneGraphemes,
     });
     let shaped = shaper.shape(buffer, ShapeOptions::new());
     // Clusters are byte offsets into `text`; a cluster shows the characters up to the next one.

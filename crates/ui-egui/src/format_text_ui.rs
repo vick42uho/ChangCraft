@@ -119,6 +119,15 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, look: &mut AddedText, extras:
             if ui.selectable_label(look.family == FontFamily::Sarabun, "Sarabun (สารบรรณ)").clicked() {
                 out.font = Some(FontChoice::Family(FontFamily::Sarabun));
             }
+            if ui.selectable_label(look.family == FontFamily::AngsanaNew, "Angsana New (อังศนา)").clicked() {
+                out.font = Some(FontChoice::Family(FontFamily::AngsanaNew));
+            }
+            if ui.selectable_label(look.family == FontFamily::CordiaNew, "Cordia New (คอร์เดีย)").clicked() {
+                out.font = Some(FontChoice::Family(FontFamily::CordiaNew));
+            }
+            if ui.selectable_label(look.family == FontFamily::BrowalliaNew, "Browallia New (บราวเวลเลีย)").clicked() {
+                out.font = Some(FontChoice::Family(FontFamily::BrowalliaNew));
+            }
             if ui.selectable_label(look.family == FontFamily::NotoSansThai, "Noto Sans Thai").clicked() {
                 out.font = Some(FontChoice::Family(FontFamily::NotoSansThai));
             }
@@ -155,7 +164,22 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, look: &mut AddedText, extras:
                         ui.label(egui::RichText::new("🇹🇭 ฟอนต์ไทยในเครื่อง (Installed Thai Fonts)").font(theme::semibold(11.0)).color(t.text_faint));
                         for font in thai_fonts {
                             if ui.button(&font.face).clicked() {
-                                out.font = Some(FontChoice::Installed(font.path, font.index));
+                                let lower = font.face.to_ascii_lowercase();
+                                if lower.contains("angsana") {
+                                    out.font = Some(FontChoice::Family(FontFamily::AngsanaNew));
+                                } else if lower.contains("cordia") {
+                                    out.font = Some(FontChoice::Family(FontFamily::CordiaNew));
+                                } else if lower.contains("browallia") || lower.contains("browalia") {
+                                    out.font = Some(FontChoice::Family(FontFamily::BrowalliaNew));
+                                } else if lower.contains("sarabun") {
+                                    out.font = Some(FontChoice::Family(FontFamily::Sarabun));
+                                } else if lower.contains("noto") {
+                                    out.font = Some(FontChoice::Family(FontFamily::NotoSansThai));
+                                } else if lower.contains("ibm") {
+                                    out.font = Some(FontChoice::Family(FontFamily::IBMPlexSansThai));
+                                } else {
+                                    out.font = Some(FontChoice::Installed(font.path, font.index));
+                                }
                                 ui.close();
                             }
                         }
