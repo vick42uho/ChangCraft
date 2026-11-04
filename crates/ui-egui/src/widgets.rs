@@ -531,13 +531,20 @@ pub fn artcraft_mark(ui: &mut egui::Ui, size: f32) -> Response {
 
 /// The ChangCraft app icon (Thai elephant), `size` points square.
 pub fn app_icon_image(ui: &mut egui::Ui, size: f32) -> Response {
+    static ICON_IMAGE: std::sync::OnceLock<egui::ColorImage> = std::sync::OnceLock::new();
+    let img = ICON_IMAGE.get_or_init(|| {
+        let bytes = include_bytes!("../../../assets/app-icon/hicolor/256x256/apps/ai.storyteller.pdfcraft.png");
+        if let Ok(sig) = pdfcraft_engine::SignatureImage::from_bytes(bytes) {
+            egui::ColorImage::from_rgba_unmultiplied(sig.size(), sig.rgba())
+        } else {
+            egui::ColorImage::filled([256, 256], egui::Color32::TRANSPARENT)
+        }
+    });
+    let texture = ui.ctx().load_texture("changcraft-icon", img.clone(), egui::TextureOptions::LINEAR);
     ui.add(
-        egui::Image::from_bytes(
-            "bytes://changcraft-icon.png",
-            include_bytes!("../../../assets/app-icon/hicolor/256x256/apps/ai.storyteller.pdfcraft.png"),
-        )
-        .fit_to_exact_size(vec2(size, size))
-        .alt_text("ChangCraft"),
+        egui::Image::new(&texture)
+            .fit_to_exact_size(vec2(size, size))
+            .alt_text("ChangCraft"),
     )
 }
 
