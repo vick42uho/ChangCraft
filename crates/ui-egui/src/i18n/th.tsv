@@ -153,17 +153,21 @@
 	Next page	หน้าถัดไป
 	Previous page	หน้าก่อนหน้า
 	Current page — type a page number or label (such as iv) and press Enter	หน้าปัจจุบัน — พิมพ์เลขหน้าหรือป้ายหน้า (เช่น iv) แล้วกด Enter
-	Welcome to PdfCraft	ยินดีต้อนรับสู่ PdfCraft
+	Welcome to ChangCraft	ยินดีต้อนรับสู่ ChangCraft
+	Welcome to PdfCraft	ยินดีต้อนรับสู่ ChangCraft
 	An open-source PDF workbench — local, private, and scriptable.	โต๊ะทำงาน PDF แบบโอเพนซอร์ส — ทำงานในเครื่อง เป็นส่วนตัว และเขียนสคริปต์ได้
+	An open-source PDF workbench for Thai language — by Wick	โปรแกรมจัดการและแก้ไขเอกสาร PDF ภาษาไทย แบบโอเพนซอร์ส — โดย Wick
 	Join the ArtCraft community	เข้าร่วมชุมชน ArtCraft
 	Get help, share feedback and follow development on Discord.	ขอความช่วยเหลือ ส่งความคิดเห็น และติดตามการพัฒนาได้ที่ Discord
 	Recommended tools	เครื่องมือแนะนำ
 	Use now	ใช้ตอนนี้
 	Open file	เปิดไฟล์
 	Recent	ล่าสุด
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	ไฟล์ที่คุณเปิดใน PdfCraft จะแสดงที่นี่ วาง PDF ที่ใดก็ได้เพื่อเปิด
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	ไฟล์ที่คุณเปิดใน ChangCraft จะแสดงที่นี่ วาง PDF ที่ใดก็ได้เพื่อเปิด
+	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	ไฟล์ที่คุณเปิดใน ChangCraft จะแสดงที่นี่ วาง PDF ที่ใดก็ได้เพื่อเปิด
 	Privacy	ความเป็นส่วนตัว
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft ทำงานแบบออฟไลน์ ไม่มีการเก็บข้อมูลการใช้งาน ไม่ต้องมีบัญชี และไม่ประมวลผลบนคลาวด์ เว้นแต่คุณจะเพิ่มผู้ให้บริการเอง
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft ทำงานแบบออฟไลน์ ไม่มีการเก็บข้อมูลการใช้งาน ไม่ต้องมีบัญชี และไม่ประมวลผลบนคลาวด์ เว้นแต่คุณจะเพิ่มผู้ให้บริการเอง
+	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft ทำงานแบบออฟไลน์ ไม่มีการเก็บข้อมูลการใช้งาน ไม่ต้องมีบัญชี และไม่ประมวลผลบนคลาวด์ เว้นแต่คุณจะเพิ่มผู้ให้บริการเอง
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	สคริปต์ทำงานในแซนด์บ็อกซ์ที่เข้าถึงไฟล์และเครือข่ายไม่ได้ เมื่อปิด JavaScript ฟังก์ชันมาตรฐานของ Acrobat สำหรับจัดรูปแบบ ตรวจสอบ และคำนวณยังคงทำงานได้
 	Back to all tools	กลับไปที่เครื่องมือทั้งหมด
 	Close panel	ปิดแผง

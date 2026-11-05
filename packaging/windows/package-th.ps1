@@ -1,7 +1,7 @@
 # Build ChangCraft Windows Installer (MSI)
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$Version = "0.11.0"
+$Version = "0.18.1"
 $Arch = "x64"
 $Dist = Join-Path $Root 'dist\release'
 $TargetDir = Join-Path $Root 'target'
