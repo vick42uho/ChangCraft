@@ -282,7 +282,7 @@ pub fn recognize_typhoon(pixels: &[u8], width: u32, height: u32, explicit_key: O
     let margin_y = height as f32 * 0.05;
     let available_w = width as f32 * 0.90;
     let available_h = height as f32 * 0.90;
-    let line_height = (available_h / (line_count + 1.0)).min(32.0).max(12.0);
+    let line_height = (available_h / (line_count + 1.0)).clamp(12.0, 32.0);
 
     let mut out_lines = Vec::new();
     for (idx, line_text) in raw_lines.iter().enumerate() {

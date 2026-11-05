@@ -127,9 +127,11 @@ impl Paddle {
                 let g = rgb[src_idx + 1] as f32 / 255.0;
                 let b = rgb[src_idx + 2] as f32 / 255.0;
 
-                tensor_data[0 * (target_h * target_w) + ty * target_w + tx] = (r - mean[0]) / std[0];
-                tensor_data[1 * (target_h * target_w) + ty * target_w + tx] = (g - mean[1]) / std[1];
-                tensor_data[2 * (target_h * target_w) + ty * target_w + tx] = (b - mean[2]) / std[2];
+                let channel_size = target_h * target_w;
+                let offset = ty * target_w + tx;
+                tensor_data[offset] = (r - mean[0]) / std[0];
+                tensor_data[channel_size + offset] = (g - mean[1]) / std[1];
+                tensor_data[2 * channel_size + offset] = (b - mean[2]) / std[2];
             }
         }
 
@@ -206,8 +208,8 @@ impl Paddle {
 
                         let orig_l = ((min_x as f32 - pad_x).max(0.0) / scale_x).max(0.0);
                         let orig_t = ((min_y as f32 - pad_y).max(0.0) / scale_y).max(0.0);
-                        let orig_r = (((max_x as f32 + pad_x) / scale_x)).min(width as f32);
-                        let orig_b = (((max_y as f32 + pad_y) / scale_y)).min(height as f32);
+                        let orig_r = ((max_x as f32 + pad_x) / scale_x).min(width as f32);
+                        let orig_b = ((max_y as f32 + pad_y) / scale_y).min(height as f32);
 
                         boxes.push([orig_l, orig_t, orig_r, orig_b]);
                     }
@@ -245,9 +247,11 @@ impl Paddle {
                 let b = rgb[src_idx + 2] as f32 / 255.0;
 
                 // PaddleOCR recognition normalization: (x - 0.5) / 0.5 = 2*x - 1
-                tensor_data[0 * (target_h * target_w) + ty * target_w + tx] = r * 2.0 - 1.0;
-                tensor_data[1 * (target_h * target_w) + ty * target_w + tx] = g * 2.0 - 1.0;
-                tensor_data[2 * (target_h * target_w) + ty * target_w + tx] = b * 2.0 - 1.0;
+                let channel_size = target_h * target_w;
+                let offset = ty * target_w + tx;
+                tensor_data[offset] = r * 2.0 - 1.0;
+                tensor_data[channel_size + offset] = g * 2.0 - 1.0;
+                tensor_data[2 * channel_size + offset] = b * 2.0 - 1.0;
             }
         }
 
@@ -278,10 +282,9 @@ impl Paddle {
                 }
             }
 
-            if best_idx != 0 && best_idx != last_idx {
-                if let Some(ch) = self.dict.get(best_idx) {
-                    decoded.push_str(ch);
-                }
+            if best_idx != 0 && best_idx != last_idx
+                && let Some(ch) = self.dict.get(best_idx) {
+                decoded.push_str(ch);
             }
             last_idx = best_idx;
         }

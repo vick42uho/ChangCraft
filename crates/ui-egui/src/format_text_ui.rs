@@ -165,17 +165,20 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, look: &mut AddedText, extras:
                         for font in thai_fonts {
                             if ui.button(&font.face).clicked() {
                                 let lower = font.face.to_ascii_lowercase();
+                                let key = pdfcraft_fonts::embedding::family_key(&font.face);
                                 if lower.contains("angsana") {
                                     out.font = Some(FontChoice::Family(FontFamily::AngsanaNew));
                                 } else if lower.contains("cordia") {
                                     out.font = Some(FontChoice::Family(FontFamily::CordiaNew));
                                 } else if lower.contains("browallia") || lower.contains("browalia") {
                                     out.font = Some(FontChoice::Family(FontFamily::BrowalliaNew));
-                                } else if lower.contains("sarabun") {
+                                } else if key == "sarabun" {
+                                    // Only the bundled family itself: TH SarabunPSK and Sarabun New are
+                                    // different designs, so their own file is used as chosen.
                                     out.font = Some(FontChoice::Family(FontFamily::Sarabun));
-                                } else if lower.contains("noto") {
+                                } else if lower.contains("noto") && key.contains("notosansthai") {
                                     out.font = Some(FontChoice::Family(FontFamily::NotoSansThai));
-                                } else if lower.contains("ibm") {
+                                } else if lower.contains("ibm") && key.contains("ibmplex") {
                                     out.font = Some(FontChoice::Family(FontFamily::IBMPlexSansThai));
                                 } else {
                                     out.font = Some(FontChoice::Installed(font.path, font.index));

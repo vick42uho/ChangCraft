@@ -11,26 +11,7 @@ pub struct FontFile {
 
 /// Standard user-installed font folders; discovery is performed only on request.
 pub fn installed_directories() -> Vec<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    if cfg!(target_os = "macos") {
-        let mut dirs = vec![PathBuf::from("/Library/Fonts")];
-        if let Some(home) = home {
-            dirs.push(home.join("Library/Fonts"));
-        }
-        dirs
-    } else if cfg!(windows) {
-        let mut dirs = std::env::var_os("WINDIR").map(|p| PathBuf::from(p).join("Fonts")).into_iter().collect::<Vec<_>>();
-        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            dirs.push(PathBuf::from(local).join("Microsoft/Windows/Fonts"));
-        }
-        dirs
-    } else {
-        let mut dirs = vec![PathBuf::from("/usr/share/fonts"), PathBuf::from("/usr/local/share/fonts")];
-        if let Some(home) = home {
-            dirs.extend([home.join(".local/share/fonts"), home.join(".fonts")]);
-        }
-        dirs
-    }
+    pdfcraft_fonts::embedding::font_directories()
 }
 
 /// Bounded, symlink-free scan. Only standalone, openly licensed, embeddable faces are listed.

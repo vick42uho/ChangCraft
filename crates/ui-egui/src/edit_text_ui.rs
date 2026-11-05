@@ -1372,23 +1372,11 @@ pub(crate) fn install_source_fonts(ctx: &egui::Context, doc: &pdfcraft_engine::D
         stack.extend(
             programs
                 .iter()
-                .filter(|p| {
-                    pdfcraft_fonts::embedding::face_key(&p.face) == pdfcraft_fonts::embedding::face_key(&program.face)
-                        && p.resource != program.resource
-                })
+                .filter(|p| p.resource != program.resource && pdfcraft_fonts::embedding::same_family(&p.face, &program.face))
                 .filter_map(|p| families.get(&p.resource).cloned()),
         );
         if let Some(fallback) = definitions.families.get(&FontFamily::Proportional) {
             stack.extend(fallback.iter().cloned());
-        }
-        let is_thai = program.face.to_ascii_lowercase().contains("thai")
-            || program.face.to_ascii_lowercase().contains("sarabun");
-        if is_thai {
-            for (res, fam_name) in &families {
-                if res.starts_with("PCApproved") && !stack.contains(fam_name) {
-                    stack.push(fam_name.clone());
-                }
-            }
         }
         definitions.families.insert(FontFamily::Name(name.clone().into()), stack);
     }

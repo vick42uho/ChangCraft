@@ -123,7 +123,9 @@ fn face(script: ShapedScript) -> Option<&'static (FontRef<'static>, ShaperData)>
         ShapedScript::Thai => &THAI,
         ShapedScript::ThaiNoto => &THAI_NOTO,
         ShapedScript::ThaiIBMPlex => &THAI_IBM_PLEX,
-        ShapedScript::ThaiAngsana | ShapedScript::ThaiCordia | ShapedScript::ThaiBrowallia => unreachable!(),
+        ShapedScript::ThaiAngsana | ShapedScript::ThaiCordia | ShapedScript::ThaiBrowallia => {
+            return face(ShapedScript::Thai);
+        }
     };
     cache
         .get_or_init(|| {

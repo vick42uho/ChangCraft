@@ -127,23 +127,46 @@ pub fn text_editor_fonts(doc: &Document, page: usize) -> Result<Vec<TextEditorFo
             bytes,
         });
     }
-    // The approved full face follows all source subsets in the editor's font stack. It can
-    // display newly inserted glyphs before Apply without changing the source text's face.
+    // The full face of the same family follows all source subsets in the editor's font stack:
+    // the bundled open face when there is one, otherwise the family's own program already
+    // installed on this computer. A look-alike family is never added (#THSarabunPSK vs Sarabun).
+    // Installed faces are read only for families the page shows Thai with, which is the case an
+    // edit needs them for; every other script keeps the preview it had.
+    let thai_faces: Vec<String> = text_lines(doc, page)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|line| line.text.chars().any(|c| matches!(u32::from(c), 0x0E00..=0x0E7F)))
+        .map(|line| line.base_font.rsplit('+').next().unwrap_or_default().to_owned())
+        .collect();
     let source_faces: Vec<_> = result.iter().map(|p| p.face.clone()).collect();
     for face in source_faces {
-        let fulls = pdfcraft_fonts::embedding::matching_faces(&face);
-        let faces_to_try: Vec<&'static pdfcraft_fonts::CraftFont> = if fulls.is_empty() && (face.to_ascii_lowercase().contains("thai") || face.to_ascii_lowercase().contains("sarabun")) {
-            pdfcraft_fonts::ui_thai_fonts()
-        } else {
-            fulls
-        };
-        for full in faces_to_try {
-            if full.bytes.len() > budget || result.iter().any(|p| p.resource == format!("PCApproved{}", full.name())) {
-                continue;
+        let fulls = pdfcraft_fonts::embedding::matching_faces_exact(&face);
+        if !fulls.is_empty() {
+            for full in fulls {
+                let resource = format!("PCApproved{}", full.name());
+                if full.bytes.len() > budget || result.iter().any(|p| p.resource == resource) {
+                    continue;
+                }
+                budget -= full.bytes.len();
+                result.push(TextEditorFont { resource, face: face.clone(), bytes: full.bytes.to_vec() });
             }
-            budget -= full.bytes.len();
-            result.push(TextEditorFont { resource: format!("PCApproved{}", full.name()), face: face.clone(), bytes: full.bytes.to_vec() });
+            continue;
         }
+        if !thai_faces.iter().any(|f| pdfcraft_fonts::embedding::same_family(f, &face)) {
+            continue;
+        }
+        let (bold, italic) = pdfcraft_fonts::embedding::name_style(&face);
+        let Some(program) = pdfcraft_fonts::embedding::installed_face(&face, bold, italic) else { continue };
+        if program.0.len() > budget {
+            continue;
+        }
+        let resource = format!("PCSource{}", program.1.replace(' ', ""));
+        if result.iter().any(|p| p.resource == resource) {
+            continue;
+        }
+        budget -= program.0.len();
+        // `face` stays the source family, so the editor stacks this program with that face.
+        result.push(TextEditorFont { resource, face: face.clone(), bytes: program.0.clone() });
     }
     Ok(result)
 }
@@ -2199,6 +2222,78 @@ fn source_program_completes(doc: &Document, fonts: &Dict, line: &TextLine, text:
     !missing.is_empty() && source_program(doc, fonts, &line.font).is_some_and(|bytes| pdfcraft_fonts::embedding::covers(&bytes, &missing))
 }
 
+/// A complete face of exactly `family` that draws `text`: a bundled open face of that family,
+/// otherwise the same family installed on this computer. A look-alike family never stands in
+/// (`THSarabunPSK` is not `Sarabun`): its shapes and widths differ. `None` means the family has
+/// no complete face here, so the caller refuses instead of substituting.
+fn family_program(family: &str, bold: bool, italic: bool, text: &str) -> Option<(Vec<u8>, String)> {
+    let name = family.rsplit('+').next().unwrap_or(family);
+    if !text.chars().any(|c| matches!(u32::from(c), 0x0E00..=0x0E7F)) {
+        // Other scripts keep the faces they already use: their fallbacks are generated from the
+        // same bundled family, and embedding a full CJK face for one character would add
+        // megabytes to the file.
+        return None;
+    }
+    if let Some(face) = pdfcraft_fonts::embedding::matching_faces_exact(name)
+        .into_iter()
+        .find(|f| f.covers("Thai") && pdfcraft_fonts::embedding::covers(f.bytes, text))
+    {
+        return Some((face.bytes.to_vec(), face.family.to_string()));
+    }
+    // The same family installed on this computer, which is where a Thai document's own face
+    // usually lives (TH SarabunPSK, Angsana New, Tahoma). Never bundled, never committed.
+    let program = pdfcraft_fonts::embedding::installed_face(name, bold, italic)?;
+    pdfcraft_fonts::embedding::covers(&program.0, text).then(|| (program.0.clone(), name.to_string()))
+}
+
+/// Embed a complete face of exactly `family` as a page font, once per `key`, and return its
+/// resource name. The document's own complete program for `source` comes first: it is the face
+/// the paragraph already shows. `None` when no complete face of the family draws `text`.
+#[allow(clippy::too_many_arguments)]
+fn embed_family_face(
+    doc: &mut Document,
+    fonts: &mut Dict,
+    metrics: &mut std::collections::BTreeMap<String, Metrics>,
+    embedded: &mut HashMap<String, String>,
+    source: Option<&str>,
+    family: &str,
+    bold: bool,
+    italic: bool,
+    text: &str,
+) -> Result<Option<String>, EditError> {
+    let family = family.rsplit('+').next().unwrap_or(family);
+    if let Some(resource) = source {
+        let key = format!("source {resource}");
+        if let Some(name) = embedded.get(&key) {
+            return Ok(Some(name.clone()));
+        }
+        if let Some(bytes) = source_program(doc, fonts, resource).filter(|bytes| pdfcraft_fonts::embedding::covers(bytes, text)) {
+            let full = pdfcraft_fonts::embedding::names(&bytes).map_or_else(|_| family.to_owned(), |(name, _)| name);
+            let name = pdfcraft_fonts::embedding::embed(doc, fonts, &bytes, &full).map_err(EditError::Invalid)?;
+            let dict = fonts
+                .get(name.as_bytes())
+                .and_then(|f| doc.dict(f))
+                .ok_or_else(|| EditError::Invalid("the source font could not be loaded".into()))?;
+            metrics.insert(name.clone(), Metrics::from_dict(doc, &dict));
+            embedded.insert(key, name.clone());
+            return Ok(Some(name));
+        }
+    }
+    let key = format!("family {} {bold} {italic}", pdfcraft_fonts::embedding::family_key(family));
+    if let Some(name) = embedded.get(&key) {
+        return Ok(Some(name.clone()));
+    }
+    let Some((bytes, full)) = family_program(family, bold, italic, text) else { return Ok(None) };
+    let name = pdfcraft_fonts::embedding::embed(doc, fonts, &bytes, &full).map_err(EditError::Invalid)?;
+    let dict = fonts
+        .get(name.as_bytes())
+        .and_then(|f| doc.dict(f))
+        .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+    metrics.insert(name.clone(), Metrics::from_dict(doc, &dict));
+    embedded.insert(key, name.clone());
+    Ok(Some(name))
+}
+
 /// A subset may contain all the letters but no space glyph: producers use another subset
 /// or a positioning operator for spaces. Do the same instead of substituting the whole font.
 fn source_encodes(metrics: &Metrics, text: &str) -> bool {
@@ -2320,6 +2415,7 @@ pub(crate) fn replace_line_with_limit(doc: &mut Document, page: usize, line: usi
     let shown = crate::bidi::to_visual(&indic_text);
     let reused = font.as_ref().filter(|m| source_encodes(m, &shown));
     let mut substituted = None;
+    let mut fonts_changed = false;
     let mut replacement: Vec<Op> = Vec::new();
     // ' and " also move to the next line; keep that.
     match ops[first].op.as_slice() {
@@ -2342,7 +2438,42 @@ pub(crate) fn replace_line_with_limit(doc: &mut Document, page: usize, line: usi
         )?),
         None => {
             let fallback_shown = crate::bidi::to_visual(&text);
-            if needs_type3(&text) {
+            // The line's own family, complete: the document's program, a bundled face of that
+            // family, or that family installed on this computer. Never a look-alike family.
+            let mut full_metrics = std::collections::BTreeMap::new();
+            let mut full_names = HashMap::new();
+            let full = embed_family_face(
+                doc,
+                &mut fonts_res,
+                &mut full_metrics,
+                &mut full_names,
+                Some(&target.font),
+                &target.base_font,
+                target.bold,
+                target.italic,
+                &text,
+            )?;
+            if let Some(name) = full {
+                let metrics = full_metrics
+                    .get(&name)
+                    .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+                let bytes = metrics.encode(&shown).ok_or_else(|| {
+                    EditError::Invalid(format!("\"{text}\" can't be shown by the {} font", target.base_font))
+                })?;
+                let size = font_size_before(&ops, first).unwrap_or(target.size);
+                replacement.push(Op::new("Tf", vec![Object::name(&name), pdfcraft_content::num(size)]));
+                replacement.push(Op::new("Tj", vec![Object::String(PdfString::literal(bytes))]));
+                replacement.push(Op::new("Tf", vec![Object::name(&target.font), pdfcraft_content::num(size)]));
+                fonts_changed = true;
+            } else if needs_type3(&text) {
+                if let Some(ch) = text.chars().find(|c| is_thai(*c)) {
+                    let family = target.base_font.rsplit('+').next().unwrap_or(&target.base_font);
+                    return Err(EditError::Invalid(format!(
+                        "the PDF's {family} font has no glyph for {ch} (U+{:04X}) and no complete {family} font is installed; \
+                         install {family} on this computer, or choose Load font… with its font file",
+                        u32::from(ch)
+                    )));
+                }
                 let fallback = type3_font(doc, &mut fonts_res, &text, source_family(&target.base_font), target.bold, max_glyphs)?;
                 let runs = type3_encode(&fallback, &fallback_shown)
                     .ok_or_else(|| EditError::Invalid(format!("\"{text}\" can't be shown by the {} fallback", fallback.family)))?;
@@ -2353,6 +2484,7 @@ pub(crate) fn replace_line_with_limit(doc: &mut Document, page: usize, line: usi
                 }
                 replacement.push(Op::new("Tf", vec![Object::name(&target.font), pdfcraft_content::num(size)]));
                 substituted = Some(format!("{} Type3", fallback.family));
+                fonts_changed = true;
             } else {
                 let win = pdfcraft_fonts::win_ansi(&fallback_shown);
                 // WinAnsi turns what it can't show into '?'; refuse rather than print the wrong thing.
@@ -2375,6 +2507,7 @@ pub(crate) fn replace_line_with_limit(doc: &mut Document, page: usize, line: usi
                 f.set(b"BaseFont".to_vec(), Object::name(base));
                 f.set(b"Encoding".to_vec(), Object::name("WinAnsiEncoding"));
                 fonts_res.set(substitute_name.into_bytes(), Object::Dict(f));
+                fonts_changed = true;
             }
         }
     }
@@ -2382,12 +2515,12 @@ pub(crate) fn replace_line_with_limit(doc: &mut Document, page: usize, line: usi
     let new_data = splice(&pieces, &ops, |i| if i == first { (std::mem::take(&mut replacement), false) } else { (Vec::new(), !drops.contains(&i)) });
     let contents = rewritten_contents(doc, &streams, new_data);
     let page_ref = p.obj;
-    if substituted.is_some() {
+    if fonts_changed {
         res.set(b"Font".to_vec(), Object::Dict(fonts_res));
     }
     doc.update_dict(page_ref, |d| {
         d.set(b"Contents".to_vec(), contents);
-        if substituted.is_some() {
+        if fonts_changed {
             d.set(b"Resources".to_vec(), Object::Dict(res));
         }
     })?;
@@ -2832,10 +2965,38 @@ fn rewrite_block_from(
         let emit_inv = Matrix(emit.ctm).invert().ok_or_else(|| EditError::Invalid("the paragraph has a singular transform".into()))?;
         Matrix(o.tm).then(&Matrix(o.ctm)).then(&emit_inv).0
     };
-    let type3 = if !reuse && needs_type3(&flat) { Some(type3_font(doc, &mut fonts_res, &flat, family, bold, max_glyphs)?) } else { None };
+    // A complete face of exactly the paragraph's family keeps the shapes and widths already on the
+    // page: the document's own program, a bundled face of that family, or that family installed on
+    // this computer. A look-alike family is never drawn in its place.
+    let mut full_metrics = std::collections::BTreeMap::new();
+    let mut full_names = HashMap::new();
+    let full = if reuse || style.family.is_some() {
+        None
+    } else {
+        embed_family_face(doc, &mut fonts_res, &mut full_metrics, &mut full_names, Some(&first.font), &b.base_font, bold, italic, &flat)?
+    };
+    // Thai is never redrawn in another family: its shapes and widths would change.
+    if !reuse && full.is_none() && style.family.is_none() && flat.chars().any(is_thai) {
+        let family = b.base_font.rsplit('+').next().unwrap_or(&b.base_font);
+        let ch = flat.chars().find(|ch| is_thai(*ch)).unwrap_or(' ');
+        return Err(EditError::Invalid(format!(
+            "the PDF's {family} font has no glyph for {ch} (U+{:04X}) and no complete {family} font is installed; \
+             install {family} on this computer, or choose Load font… with its font file",
+            u32::from(ch)
+        )));
+    }
+    let type3 = if !reuse && full.is_none() && needs_type3(&flat) {
+        Some(type3_font(doc, &mut fonts_res, &flat, family, bold, max_glyphs)?)
+    } else {
+        None
+    };
     let advance = |s: &str| -> f64 {
         let t = match (&metrics, reuse) {
             (Some(m), true) => {
+                let visual_s = if m.visual_order { crate::indic::to_visual(s) } else { s.to_owned() };
+                source_width(m, &visual_s, size, space, o_state.char_spacing, o_state.word_spacing)
+            }
+            _ if let Some(m) = full.as_ref().and_then(|name| full_metrics.get(name)) => {
                 let visual_s = if m.visual_order { crate::indic::to_visual(s) } else { s.to_owned() };
                 source_width(m, &visual_s, size, space, o_state.char_spacing, o_state.word_spacing)
             }
@@ -2884,6 +3045,14 @@ fn rewrite_block_from(
     let (show_font, encode): (String, Encoder) = if let Some(m) = metrics.clone().filter(|_| reuse) {
         let name = font_name.clone();
         (font_name.clone(), Box::new(move |s: &str| m.encode(s).map(|bytes| vec![(name.clone(), bytes)])))
+    } else if let Some(name) = full.clone() {
+        // The same family, complete: no substitution is reported, and the encoding is Unicode.
+        let m = full_metrics
+            .get(&name)
+            .cloned()
+            .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+        let shown = name.clone();
+        (name, Box::new(move |s: &str| m.encode(s).map(|bytes| vec![(shown.clone(), bytes)])))
     } else if let Some(fallback) = type3.clone() {
         substituted = Some(format!("{} Type3", fallback.family));
         let first = fallback.names.first().cloned().ok_or_else(no_japanese_font)?;
@@ -2963,7 +3132,10 @@ fn rewrite_block_from(
     let justify = align == Some(crate::added::Align::Justify);
     let word_spacing_reaches_spaces = match metrics.as_ref().filter(|_| reuse) {
         Some(m) => m.encode(" ").is_some_and(|b| m.codes(&b).iter().all(|(c, len)| m.is_space(*c, *len))),
-        None => type3.is_none(),
+        None => match full.as_ref().and_then(|name| full_metrics.get(name)) {
+            Some(m) => m.encode(" ").is_some_and(|b| m.codes(&b).iter().all(|(c, len)| m.is_space(*c, *len))),
+            None => type3.is_none(),
+        },
     };
     let mut x = 0.0;
     let mut tw_set = 0.0;

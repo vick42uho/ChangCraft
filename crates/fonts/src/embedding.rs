@@ -2,6 +2,7 @@
 //! document inputs or the optional craft-fonts build input, never system-interface fallbacks.
 
 use std::fmt::Write as _;
+use std::path::PathBuf;
 
 use pdfcraft_cos::{Dict, Document, Object, PdfString, Stream};
 use skrifa::{
@@ -39,6 +40,49 @@ pub fn face_key(name: &str) -> String {
     } else {
         raw
     }
+}
+
+/// The family a PDF font name belongs to: the subset tag (`ABCDEF+`), a publisher prefix
+/// (`P123`), separators and the style suffix removed, case folded.
+///
+/// Unlike [`face_key`], two different families never share a key: `THSarabunPSK` stays
+/// `thsarabunpsk` and `Sarabun` stays `sarabun`. Edit-time font reuse uses this key, so a
+/// look-alike family is never drawn in place of the document's own face.
+pub fn family_key(name: &str) -> String {
+    let mut raw: String =
+        name.rsplit('+').next().unwrap_or(name).chars().filter(char::is_ascii_alphanumeric).flat_map(char::to_lowercase).collect();
+    if raw.len() > 2 && raw.starts_with('p') && raw.chars().nth(1).is_some_and(|c| c.is_ascii_digit()) {
+        let digits_end = raw.chars().skip(1).take_while(|c| c.is_ascii_digit()).count() + 1;
+        raw = raw[digits_end..].to_string();
+    }
+    // `Sarabun-BoldItalic`, `SarabunBold`, `Sarabun Regular`: the style is not part of the family.
+    for style in [
+        "bolditalic",
+        "boldoblique",
+        "semibold",
+        "demibold",
+        "regular",
+        "italic",
+        "oblique",
+        "black",
+        "heavy",
+        "light",
+        "medium",
+        "bold",
+    ] {
+        if raw.len() > style.len() && raw.ends_with(style) {
+            raw.truncate(raw.len() - style.len());
+            break;
+        }
+    }
+    raw
+}
+
+/// Whether two PDF font names belong to the same family, ignoring only the subset tag and the
+/// style suffix. `THSarabunPSK` and `Sarabun` are different families.
+pub fn same_family(a: &str, b: &str) -> bool {
+    let (a, b) = (family_key(a), family_key(b));
+    !a.is_empty() && a == b
 }
 
 /// Load the matching Thai TrueType font program from Windows system fonts if available
@@ -134,20 +178,153 @@ pub fn matching_faces(name: &str) -> Vec<&'static crate::CraftFont> {
         }
     }
 
-    matches.sort_by_key(|f| {
-        let style_bold = f.style.to_ascii_lowercase().contains("bold");
-        let style_italic = f.style.to_ascii_lowercase().contains("italic");
-        let mut score = 0;
-        if style_bold == is_bold {
-            score -= 2;
-        }
-        if style_italic == is_italic {
-            score -= 1;
-        }
-        score
-    });
+    matches.sort_by_key(|f| style_score(f, is_bold, is_italic));
     matches
 }
+
+/// The style match: exact weight and slant first, never a different family.
+fn style_score(f: &crate::CraftFont, is_bold: bool, is_italic: bool) -> i32 {
+    let style_bold = f.style.to_ascii_lowercase().contains("bold");
+    let style_italic = f.style.to_ascii_lowercase().contains("italic");
+    let mut score = 0;
+    if style_bold == is_bold {
+        score -= 2;
+    }
+    if style_italic == is_italic {
+        score -= 1;
+    }
+    score
+}
+
+pub fn name_style(name: &str) -> (bool, bool) {
+    let lower = name.to_ascii_lowercase();
+    let bold = ["bold", "black", "heavy", "semibold", "demi"].iter().any(|s| lower.contains(s));
+    let italic = lower.contains("italic") || lower.contains("oblique");
+    (bold, italic)
+}
+
+/// Bundled faces of *exactly* the source family ([`family_key`]), best style first. Unlike
+/// [`matching_faces`], a look-alike family never stands in: `THSarabunPSK` never returns the
+/// bundled `Sarabun`, whose widths and shapes differ.
+pub fn matching_faces_exact(name: &str) -> Vec<&'static crate::CraftFont> {
+    let key = family_key(name);
+    if key.is_empty() {
+        return Vec::new();
+    }
+    let (is_bold, is_italic) = name_style(name);
+    let mut matches: Vec<&'static crate::CraftFont> = crate::CRAFT_FONTS
+        .iter()
+        .filter(|f| family_key(f.family) == key || family_key(&f.name()) == key)
+        .collect();
+    matches.sort_by_key(|f| style_score(f, is_bold, is_italic));
+    matches
+}
+
+/// The font folders this computer keeps document fonts in. Read only on request: a face found
+/// here is document input for a document that already names it, never a PdfCraft asset.
+pub fn font_directories() -> Vec<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    if cfg!(target_os = "macos") {
+        let mut dirs = vec![PathBuf::from("/Library/Fonts")];
+        if let Some(home) = home {
+            dirs.push(home.join("Library/Fonts"));
+        }
+        dirs
+    } else if cfg!(windows) {
+        let mut dirs = std::env::var_os("WINDIR").map(|p| PathBuf::from(p).join("Fonts")).into_iter().collect::<Vec<_>>();
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            dirs.push(PathBuf::from(local).join("Microsoft/Windows/Fonts"));
+        }
+        dirs
+    } else {
+        let mut dirs = vec![PathBuf::from("/usr/share/fonts"), PathBuf::from("/usr/local/share/fonts")];
+        if let Some(home) = home {
+            dirs.extend([home.join(".local/share/fonts"), home.join(".fonts")]);
+        }
+        dirs
+    }
+}
+
+fn is_font_file(path: &std::path::Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("ttf") || e.eq_ignore_ascii_case("otf") || e.eq_ignore_ascii_case("ttc"))
+}
+
+/// A complete font program found on this computer, with its PostScript name.
+pub type InstalledProgram = std::sync::Arc<(Vec<u8>, String)>;
+
+/// The complete program of the font family `name` installed on this computer, in the closest
+/// style. `None` when the family is not installed, or its licence does not allow editable
+/// embedding.
+///
+/// This reads a font the user's own machine already has, only when a document names that
+/// family; nothing is bundled with PdfCraft, committed, or copied. Results are cached for the
+/// session.
+pub fn installed_face(name: &str, bold: bool, italic: bool) -> Option<InstalledProgram> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<HashMap<String, Option<InstalledProgram>>>> = OnceLock::new();
+    let key = format!("{}\u{0}{bold}{italic}", family_key(name));
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(map) = cache.lock()
+        && let Some(hit) = map.get(&key)
+    {
+        return hit.clone();
+    }
+    let found = installed_face_in(&font_directories(), name, bold, italic);
+    if let Ok(mut map) = cache.lock() {
+        map.insert(key, found.clone());
+    }
+    found
+}
+
+/// [`installed_face`] over explicit folders (tests, and automation that resolved its roots).
+pub fn installed_face_in(dirs: &[PathBuf], name: &str, bold: bool, italic: bool) -> Option<InstalledProgram> {
+    let wanted = family_key(name);
+    if wanted.chars().count() < 3 {
+        return None;
+    }
+    let mut best: Option<(i32, InstalledProgram)> = None;
+    for dir in dirs.iter().take(16) {
+        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        for entry in entries.flatten().take(8192) {
+            let path = entry.path();
+            if !is_font_file(&path) {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
+            // Cheap filter before reading: installed file names normally carry the family name.
+            if !family_key(stem).contains(&wanted) {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else { continue };
+            if !meta.is_file() || meta.len() > (16 << 20) {
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(&path) else { continue };
+            let count = ttc_face_count(&bytes).min(16);
+            for index in 0..count {
+                let Ok(face) = extract_ttc_face(&bytes, index) else { continue };
+                let Ok((family, postscript, full)) = names_with_full(&face) else { continue };
+                if ![&family, &postscript, &full].iter().any(|n| family_key(n) == wanted) {
+                    continue;
+                }
+                // A program whose licence forbids editable embedding cannot be used at all.
+                if validate(&face).is_err() {
+                    continue;
+                }
+                let (face_bold, face_italic) = name_style(&format!("{full} {postscript}"));
+                let mut score = 0;
+                score += if face_bold == bold { 2 } else { -2 };
+                score += if face_italic == italic { 1 } else { -1 };
+                if best.as_ref().is_none_or(|(best, _)| score > *best) {
+                    best = Some((score, std::sync::Arc::new((face, postscript))));
+                }
+            }
+        }
+    }
+    best.map(|(_, program)| program)
+}
+
 
 /// If `bytes` is a TrueType Collection (`ttcf`), extract font `index` as a standalone TrueType / OpenType font (`sfnt`).
 /// If `bytes` is already a standalone font, returns `bytes.to_vec()`.
@@ -212,7 +389,7 @@ pub fn extract_ttc_face(bytes: &[u8], index: u32) -> Result<Vec<u8>, String> {
     for &(_, _, off, len) in &records {
         let pad = (4 - (len % 4)) % 4;
         out.extend_from_slice(&bytes[off..off + len]);
-        out.extend(std::iter::repeat(0u8).take(pad));
+        out.resize(out.len() + pad, 0u8);
     }
 
     Ok(out)
@@ -695,5 +872,18 @@ mod tests {
                 assert_eq!(full, "Angsana New");
             }
         }
+    }
+
+    #[test]
+    fn family_keys_distinguish_lookalike_families() {
+        assert_eq!(family_key("ABCDEF+THSarabunPSK-Bold"), "thsarabunpsk");
+        assert_eq!(family_key("P123+THSarabunPSK-Italic"), "thsarabunpsk");
+        assert_eq!(family_key("THSarabunPSK"), "thsarabunpsk");
+        assert_eq!(family_key("ABCDEF+Sarabun-Bold"), "sarabun");
+        assert_eq!(family_key("Sarabun"), "sarabun");
+        assert!(!same_family("THSarabunPSK", "Sarabun"));
+        assert!(same_family("ABCDEF+THSarabunPSK-Bold", "THSarabunPSK"));
+        assert!(same_family("BAAAAA+AngsanaNew-BoldItalic", "AngsanaNew"));
+        assert_eq!(matching_faces_exact("THSarabunPSK").len(), 0);
     }
 }

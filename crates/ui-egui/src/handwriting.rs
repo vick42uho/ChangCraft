@@ -27,17 +27,16 @@ pub(crate) fn preferences_section(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &
         ui.add_space(6.0);
 
         // Check if background test finished
-        if let Ok(mut lock) = TEST_RESULT.try_lock() {
-            if let Some(res) = lock.take() {
-                match res {
-                    Ok(k) => {
-                        let _ = typhoon::save_stored_key(&k);
-                        app.typhoon_key_draft.clear();
-                        app.typhoon_status = Some(tl!("Key saved.").to_string());
-                    }
-                    Err(e) => {
-                        app.typhoon_status = Some(e);
-                    }
+        if let Ok(mut lock) = TEST_RESULT.try_lock()
+            && let Some(res) = lock.take() {
+            match res {
+                Ok(k) => {
+                    let _ = typhoon::save_stored_key(&k);
+                    app.typhoon_key_draft.clear();
+                    app.typhoon_status = Some(tl!("Key saved.").to_string());
+                }
+                Err(e) => {
+                    app.typhoon_status = Some(e);
                 }
             }
         }
