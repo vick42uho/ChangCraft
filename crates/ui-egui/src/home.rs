@@ -48,7 +48,7 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                         });
                     });
                     ui.add_space(10.0);
-                    let resp = widgets::icon_pill(ui, "code-xml", "https://github.com/vick42uho/ChangCraft.git", false);
+                    let resp = widgets::icon_pill(ui, "code-xml", tl!("ChangCraft on GitHub"), false);
                     if resp.on_hover_text("https://github.com/vick42uho/ChangCraft.git").clicked() {
                         app.open_url("https://github.com/vick42uho/ChangCraft.git");
                     }
