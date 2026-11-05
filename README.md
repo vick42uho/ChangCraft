@@ -22,10 +22,14 @@
 
 ### 📥 ดาวน์โหลดสำหรับ Windows (Download for Windows)
 
+#### 🌟 เวอร์ชันล่าสุด: v0.18.1 (Latest Release)
 | ไฟล์ติดตั้ง / ดาวน์โหลด | คำอธิบาย | ลิงก์ดาวน์โหลด |
 | :--- | :--- | :--- |
-| **📦 Windows Installer (MSI)** | ตัวติดตั้งมาตรฐาน Windows มี Shortcut และไอคอนช้างไทย ติดตั้งควบคู่กับ PdfCraft ต้นฉบับได้โดยไม่ตีกัน | [**ดาวน์โหลด .msi (v0.11.0)**](https://github.com/vick42uho/ChangCraft/releases/download/v0.11.0/changcraft-0.11.0-windows-x64.msi) |
-| **⚡ Portable ZIP** | เวอร์ชันพกพา แตกไฟล์แล้วเปิด `changcraft.exe` ใช้งานได้ทันที ไม่ต้องติดตั้ง | [**ดาวน์โหลด .zip (v0.11.0)**](https://github.com/vick42uho/ChangCraft/releases/download/v0.11.0/changcraft-0.11.0-windows-x64-portable.zip) |
+| **📦 Windows Installer (MSI)** | ตัวติดตั้งมาตรฐาน Windows มี Shortcut และไอคอนช้างไทย ติดตั้งควบคู่กับ PdfCraft ต้นฉบับได้โดยไม่ตีกัน | [**ดาวน์โหลด .msi (v0.18.1)**](https://github.com/vick42uho/ChangCraft/releases/download/v0.18.1/changcraft-0.18.1-windows-x64.msi) |
+| **⚡ Portable ZIP** | เวอร์ชันพกพา แตกไฟล์แล้วเปิด `changcraft.exe` ใช้งานได้ทันที ไม่ต้องติดตั้ง | [**ดาวน์โหลด .zip (v0.18.1)**](https://github.com/vick42uho/ChangCraft/releases/download/v0.18.1/changcraft-0.18.1-windows-x64-portable.zip) |
+
+#### 📦 เวอร์ชันก่อนหน้า (Previous Releases)
+- **v0.11.0**: [MSI Installer](https://github.com/vick42uho/ChangCraft/releases/download/v0.11.0/changcraft-0.11.0-windows-x64.msi) | [Portable ZIP](https://github.com/vick42uho/ChangCraft/releases/download/v0.11.0/changcraft-0.11.0-windows-x64-portable.zip)
 
 ---
 
