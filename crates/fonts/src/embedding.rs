@@ -293,7 +293,10 @@ pub fn installed_face_in(dirs: &[PathBuf], name: &str, bold: bool, italic: bool)
             }
             let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
             // Cheap filter before reading: installed file names normally carry the family name.
-            if !family_key(stem).contains(&wanted) {
+            let stem_key = family_key(stem);
+            let stem_match = stem_key.contains(&wanted)
+                || (stem_key.chars().count() >= 3 && wanted.contains(&stem_key));
+            if !stem_match {
                 continue;
             }
             let Ok(meta) = entry.metadata() else { continue };
@@ -885,5 +888,14 @@ mod tests {
         assert!(same_family("ABCDEF+THSarabunPSK-Bold", "THSarabunPSK"));
         assert!(same_family("BAAAAA+AngsanaNew-BoldItalic", "AngsanaNew"));
         assert_eq!(matching_faces_exact("THSarabunPSK").len(), 0);
+
+        #[cfg(windows)]
+        {
+            let face = installed_face("THSarabunPSK", false, false);
+            if std::path::Path::new("C:/Users/it-dev/AppData/Local/Microsoft/Windows/Fonts/THSarabun.ttf").exists() {
+                assert!(face.is_some(), "THSarabun.ttf should be found for THSarabunPSK");
+                assert_eq!(family_key(&face.unwrap().1), "thsarabunpsk");
+            }
+        }
     }
 }
