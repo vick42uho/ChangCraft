@@ -777,7 +777,7 @@
 	Files are combined from top to bottom. Leave Pages empty to take every page.	Skedarët bashkohen nga lart poshtë. Lëre Faqet bosh për të marrë çdo faqe.
 	Files are combined in this order. Leave Pages empty to take every page.	Skedarët bashkohen sipas këtij rendi. Lëre Faqet bosh për të marrë çdo faqe.
 	Files for {name}	Skedarët për {name}
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	Skedarët që hap në PdfCraft shfaqen këtu. Hidh një PDF kudo për ta hapur.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	Skedarët që hap në ChangCraft shfaqen këtu. Hidh një PDF kudo për ta hapur.
 	Fill	Plotëso
 	Fill & Sign	Plotëso dhe nënshkruaj
 	Fill & Sign: add text	Plotëso dhe nënshkruaj: shto tekst
@@ -1307,9 +1307,9 @@
 	Patterns	Modelet
 	Patterns (graphics objects)	Modelet (objekte grafike)
 	PdfCraft didn't shut down normally. These documents had changes that were autosaved:	PdfCraft nuk u mbyll normalisht. Këta dokumente kishin ndryshime të ruajtura automatikisht:
-	PdfCraft on GitHub	PdfCraft në GitHub
+	ChangCraft on GitHub	ChangCraft në GitHub
 	PdfCraft web page	Faqja ueb e PdfCraft
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft funksionon pa internet. Pa telemetri, pa llogari dhe pa përpunim në re, përveçse nëse shton një ofrues.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft funksionon pa internet. Pa telemetri, pa llogari dhe pa përpunim në re, përveçse nëse shton një ofrues.
 	PdfCraft {c} is up to date.	PdfCraft {c} është i përditësuar.
 	PdfCraft {v} is available.	PdfCraft {v} është i disponueshëm.
 	People may need more time to respond. Check that nothing has a time limit.	Njerëzit mund të kenë nevojë për më shumë kohë për të përgjigjur. Kontrollo që asgjë të mos ketë kufi kohe.
@@ -1959,7 +1959,7 @@
 	Warnings	Paralajmërimet
 	Watermark	Filigran
 	Weak	E dobët
-	Welcome to PdfCraft	Mirë se vini në PdfCraft
+	Welcome to ChangCraft	Mirë se vini në ChangCraft
 	What word or phrase would you like to search for?	Çfarë fjale ose fraze do të kërkoni?
 	Whole words only	Vetëm fjalë të plota
 	Width	Gjerësia
@@ -2500,3 +2500,19 @@ animation effects	Off	Joaktiv
 	field names can't contain a period: {name}	emrat e fushave nuk mund të përmbajnë pikë: {name}
 	two cells would both be named {name}	dy qeliza do të kishin të dyja emrin {name}
 	a field named {name} already exists	ekziston tashmë një fushë me emrin {name}
+	API key	Çelës API
+	Get a key	Merr një çelës
+	Key removed.	Çelësi u hoq.
+	Key saved.	Çelësi u ruajt.
+	Key set (ends in {tail})	Çelësi u vendos (përfundon me {tail})
+	OpenTyphoon key	Çelës OpenTyphoon
+	Other fonts	Fonte të tjera
+	Remove key	Hiq çelësin
+	Save and test	Ruaj dhe testo
+	Testing…	Po testohet…
+	An open-source PDF workbench for Thai language — by Wick	Një hapësirë pune PDF me kod të hapur për gjuhën tajlandeze — nga Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Dërgimi i shkrimit të dorës dërgon imazhin e secilës faqe te opentyphoon.ai. Mos e përdorni për dokumente me informacione personale ose konfidenciale.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Tajlandisht (PaddleOCR · jashtë linje)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Shkrim dore tajlandez (OpenTyphoon · re)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	teksti i ndërlikuar kërkon fontin e plotë burimor TrueType/OpenType; ngarkoni atë font përpara redaktimit
+	PdfCraft on GitHub	PdfCraft në GitHub

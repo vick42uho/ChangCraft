@@ -560,7 +560,7 @@ theme	Appearance	Giao diện
 	Files are combined from top to bottom. Leave Pages empty to take every page.	Các tệp được kết hợp từ trên xuống dưới. Để trống mục Trang để lấy mọi trang.
 	Files are combined in the order shown. Drag them to change it.	Các tệp được kết hợp theo thứ tự hiển thị. Kéo chúng để thay đổi.
 	Files for {name}	Tệp cho {name}
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	Các tệp bạn mở trong PdfCraft sẽ xuất hiện ở đây. Thả một PDF vào bất kỳ đâu để mở.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	Các tệp bạn mở trong ChangCraft sẽ xuất hiện ở đây. Thả một PDF vào bất kỳ đâu để mở.
 	Fill & Sign dates	Ngày của Điền & Ký
 	Fill & Sign signature	Chữ ký của Điền & Ký
 	Fill Color:	Màu tô:
@@ -903,7 +903,7 @@ theme	Appearance	Giao diện
 	Patterns	Họa tiết
 	Patterns (graphics objects)	Họa tiết (đối tượng đồ họa)
 	PdfCraft didn't shut down normally. These documents had changes that were autosaved:	PdfCraft không đóng bình thường. Các tài liệu này có thay đổi đã được tự động lưu:
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft hoạt động ngoại tuyến. Không thu thập dữ liệu sử dụng, không cần tài khoản, và không xử lý đám mây trừ khi bạn thêm nhà cung cấp.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft hoạt động ngoại tuyến. Không thu thập dữ liệu sử dụng, không cần tài khoản, và không xử lý đám mây trừ khi bạn thêm nhà cung cấp.
 	PdfCraft {c} is up to date.	PdfCraft {c} đã là bản mới nhất.
 	PdfCraft {v} is available.	PdfCraft {v} đã có sẵn.
 	Percentage	Phần trăm
@@ -1296,7 +1296,7 @@ theme	Appearance	Giao diện
 	Visible Rectangle	Hình chữ nhật hiển thị
 	Visual	Trực quan
 	Warnings	Cảnh báo
-	Welcome to PdfCraft	Chào mừng đến với PdfCraft
+	Welcome to ChangCraft	Chào mừng đến với ChangCraft
 	What word or phrase would you like to search for?	Bạn muốn tìm từ hoặc cụm từ nào?
 	Whole words only	Chỉ khớp toàn bộ từ
 	Width:	Chiều rộng:
@@ -1539,7 +1539,7 @@ theme	Appearance	Giao diện
 	Page options	Tùy chọn trang
 	Page transitions	Hiệu ứng chuyển trang
 	Paste pages	Dán trang
-	PdfCraft on GitHub	PdfCraft trên GitHub
+	ChangCraft on GitHub	ChangCraft trên GitHub
 	PdfCraft web page	Trang web PdfCraft
 	Perimeter	Chu vi
 	Pin folder to Home…	Ghim thư mục vào Trang chủ…
@@ -2778,3 +2778,19 @@ key	Space	Space
 	a table has 1 to {max} columns	một bảng có từ 1 đến {max} cột
 	the first row number can be at most {max}	số hàng đầu tiên tối đa là {max}
 	the area, the spacing and the column widths must be numbers, the spacing 0 or more and each width more than 0	vùng, khoảng cách và độ rộng cột phải là số, khoảng cách từ 0 trở lên và mỗi độ rộng lớn hơn 0
+	API key	Khóa API
+	Get a key	Lấy khóa
+	Key removed.	Đã xóa khóa.
+	Key saved.	Đã lưu khóa.
+	Key set (ends in {tail})	Đã đặt khóa (kết thúc bằng {tail})
+	OpenTyphoon key	Khóa OpenTyphoon
+	Other fonts	Phông chữ khác
+	Remove key	Xóa khóa
+	Save and test	Lưu và thử
+	Testing…	Đang thử…
+	An open-source PDF workbench for Thai language — by Wick	Bộ công cụ PDF mã nguồn mở cho tiếng Thái — bởi Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Gửi chữ viết tay sẽ gửi hình ảnh của từng trang đến opentyphoon.ai. Không dùng cho tài liệu có thông tin cá nhân hoặc bí mật.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Tiếng Thái (PaddleOCR · ngoại tuyến)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Chữ viết tay tiếng Thái (OpenTyphoon · đám mây)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	văn bản phức tạp cần phông chữ TrueType/OpenType nguồn đầy đủ; hãy tải phông chữ đó trước khi chỉnh sửa
+	PdfCraft on GitHub	PdfCraft trên GitHub

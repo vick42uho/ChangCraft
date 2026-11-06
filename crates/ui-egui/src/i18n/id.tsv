@@ -549,7 +549,7 @@
 	Files are combined from top to bottom. Leave Pages empty to take every page.	File digabungkan dari atas ke bawah. Biarkan Halaman kosong untuk mengambil semua halaman.
 	Files are combined in the order shown. Drag them to change it.	File digabungkan sesuai urutan yang ditampilkan. Seret untuk mengubah urutannya.
 	Files for {name}	File untuk {name}
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	File yang Anda buka di PdfCraft akan muncul di sini. Jatuhkan PDF di mana saja untuk membukanya.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	File yang Anda buka di ChangCraft akan muncul di sini. Jatuhkan PDF di mana saja untuk membukanya.
 	Fill & Sign dates	Tanggal Isi & Tanda Tangani
 	Fill & Sign signature	Tanda tangan Isi & Tanda Tangani
 	Fill Color:	Warna Isian:
@@ -858,7 +858,7 @@
 	Patterns	Pola
 	Patterns (graphics objects)	Pola (objek grafis)
 	PdfCraft didn't shut down normally. These documents had changes that were autosaved:	PdfCraft tidak berhenti secara normal. Dokumen-dokumen ini memiliki perubahan yang disimpan otomatis:
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft bekerja secara luring. Tidak ada telemetri, tidak ada akun, dan tidak ada pemrosesan awan kecuali Anda menambahkan penyedia.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft bekerja secara luring. Tidak ada telemetri, tidak ada akun, dan tidak ada pemrosesan awan kecuali Anda menambahkan penyedia.
 	PdfCraft {c} is up to date.	PdfCraft {c} sudah terbaru.
 	PdfCraft {v} is available.	PdfCraft {v} tersedia.
 	Percentage	Persentase
@@ -1247,7 +1247,7 @@
 	Visible Rectangle	Persegi Terlihat
 	Visual	Visual
 	Warnings	Peringatan
-	Welcome to PdfCraft	Selamat datang di PdfCraft
+	Welcome to ChangCraft	Selamat datang di ChangCraft
 	What word or phrase would you like to search for?	Kata atau frasa apa yang ingin Anda cari?
 	Whole words only	Hanya kata utuh
 	Width:	Lebar:
@@ -1490,7 +1490,7 @@
 	Page options	Opsi halaman
 	Page transitions	Transisi halaman
 	Paste pages	Tempel halaman
-	PdfCraft on GitHub	PdfCraft di GitHub
+	ChangCraft on GitHub	ChangCraft di GitHub
 	PdfCraft web page	Halaman web PdfCraft
 	Perimeter	Keliling
 	Pin folder to Home…	Sematkan folder ke Beranda…
@@ -2751,3 +2751,19 @@ theme	Appearance	Tampilan
 	field names can't contain a period: {name}	nama kolom tidak boleh berisi titik: {name}
 	two cells would both be named {name}	dua sel akan sama-sama bernama {name}
 	a field named {name} already exists	kolom bernama {name} sudah ada
+	API key	Kunci API
+	Get a key	Dapatkan kunci
+	Key removed.	Kunci dihapus.
+	Key saved.	Kunci disimpan.
+	Key set (ends in {tail})	Kunci diatur (berakhir dengan {tail})
+	OpenTyphoon key	Kunci OpenTyphoon
+	Other fonts	Font lain
+	Remove key	Hapus kunci
+	Save and test	Simpan dan uji
+	Testing…	Menguji…
+	An open-source PDF workbench for Thai language — by Wick	Meja kerja PDF sumber terbuka untuk bahasa Thai — oleh Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Mengirim tulisan tangan akan mengirim gambar setiap halaman ke opentyphoon.ai. Jangan gunakan pada dokumen dengan informasi pribadi atau rahasia.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Thai (PaddleOCR · offline)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Tulisan tangan Thai (OpenTyphoon · cloud)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	teks kompleks memerlukan font sumber TrueType/OpenType lengkap; muat font tersebut sebelum mengedit
+	PdfCraft on GitHub	PdfCraft di GitHub

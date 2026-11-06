@@ -1836,7 +1836,7 @@
 	Read	Четене
 	Convert	Конвертиране
 	E-Sign	Е-подпис
-	Welcome to PdfCraft	Добре дошли в PdfCraft
+	Welcome to ChangCraft	Добре дошли в ChangCraft
 	An open-source PDF workbench — local, private, and scriptable.	PDF работна среда с отворен код — локална, поверителна и програмируема.
 	Recommended tools	Препоръчани инструменти
 	Use now	Използвай сега
@@ -1876,7 +1876,7 @@
 	Get help, share feedback and follow development on Discord.	Получете помощ, споделете мнение и следете разработката в Discord.
 	Join our Discord	Присъедини се към нашия Discord
 	PdfCraft web page	Уебстраница на PdfCraft
-	PdfCraft on GitHub	PdfCraft в GitHub
+	ChangCraft on GitHub	ChangCraft в GitHub
 	ArtCraft website	Уебсайт на ArtCraft
 	Check for updates…	Провери за актуализации…
 	About PdfCraft	За PdfCraft
@@ -1889,8 +1889,8 @@
 	Add background…	Добави фон…
 	Prepare a form	Подготви формуляр
 	Digitally sign	Подпиши цифрово
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	Файловете, които отваряте в PdfCraft, се показват тук. Пуснете PDF файл където и да е, за да го отворите.
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft работи офлайн. Без телеметрия, без акаунт и без обработка в облака, освен ако не добавите доставчик.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	Файловете, които отваряте в ChangCraft, се показват тук. Пуснете PDF файл където и да е, за да го отворите.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft работи офлайн. Без телеметрия, без акаунт и без обработка в облака, освен ако не добавите доставчик.
 	Measure distance	Измери разстояние
 	Measure perimeter	Измери периметър
 	Measure area	Измери площ
@@ -2478,3 +2478,19 @@ animation effects	Off	Изключени
 	field names can't contain a period: {name}	имената на полетата не може да съдържат точка: {name}
 	two cells would both be named {name}	две клетки биха имали едно и също име {name}
 	a field named {name} already exists	вече съществува поле с име {name}
+	API key	API ключ
+	Get a key	Вземи ключ
+	Key removed.	Ключът е премахнат.
+	Key saved.	Ключът е запазен.
+	Key set (ends in {tail})	Ключът е зададен (завършва с {tail})
+	OpenTyphoon key	Ключ за OpenTyphoon
+	Other fonts	Други шрифтове
+	Remove key	Премахни ключа
+	Save and test	Запази и тествай
+	Testing…	Тестване…
+	An open-source PDF workbench for Thai language — by Wick	PDF работна среда с отворен код за тайски език — от Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Изпращането на ръкопис изпраща снимка на всяка страница до opentyphoon.ai. Не го използвайте за документи с лична или поверителна информация.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Тайски (PaddleOCR · офлайн)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Тайски ръкопис (OpenTyphoon · облак)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	сложният текст изисква пълния изходен шрифт TrueType/OpenType; заредете този шрифт преди редактиране
+	PdfCraft on GitHub	PdfCraft в GitHub

@@ -1364,7 +1364,7 @@ pub(crate) fn install_source_fonts(ctx: &egui::Context, doc: &pdfcraft_engine::D
         definitions.font_data.insert(name.clone(), Arc::new(egui::FontData::from_owned(program.bytes.clone())));
         families.insert(program.resource.clone(), name);
     }
-    for program in &programs {
+    for program in programs.iter() {
         let Some(name) = families.get(&program.resource) else { continue };
         // Word-created PDFs often split one face into several subsets. Use all of the
         // document's matching subsets before falling back for newly inserted characters.

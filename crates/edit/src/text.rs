@@ -2234,7 +2234,7 @@ fn family_program(family: &str, bold: bool, italic: bool, text: &str) -> Option<
         // megabytes to the file.
         return None;
     }
-    if let Some(face) = pdfcraft_fonts::embedding::matching_faces_exact(name)
+    if let Some(face) = pdfcraft_fonts::embedding::matching_faces_exact_style(name, bold, italic)
         .into_iter()
         .find(|f| f.covers("Thai") && pdfcraft_fonts::embedding::covers(f.bytes, text))
     {

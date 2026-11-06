@@ -1708,7 +1708,7 @@
 	Read	Ler
 	Convert	Converter
 	E-Sign	Assinatura eletrônica
-	Welcome to PdfCraft	Bem-vindo ao PdfCraft
+	Welcome to ChangCraft	Bem-vindo ao ChangCraft
 	An open-source PDF workbench — local, private, and scriptable.	Uma bancada de trabalho de PDF de código aberto — local, privada e programável.
 	Recommended tools	Ferramentas recomendadas
 	Use now	Usar agora
@@ -1748,7 +1748,7 @@
 	Get help, share feedback and follow development on Discord.	Obtenha ajuda, compartilhe comentários e acompanhe o desenvolvimento no Discord.
 	Join our Discord	Entrar em nosso Discord
 	PdfCraft web page	Página da Web do PdfCraft
-	PdfCraft on GitHub	PdfCraft no GitHub
+	ChangCraft on GitHub	ChangCraft no GitHub
 	ArtCraft website	Site do ArtCraft
 	Check for updates…	Verificar atualizações…
 	About PdfCraft	Sobre o PdfCraft
@@ -1761,8 +1761,8 @@
 	Add background…	Adicionar plano de fundo…
 	Prepare a form	Preparar um formulário
 	Digitally sign	Assinar digitalmente
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	Os arquivos abertos no PdfCraft aparecem aqui. Solte um PDF em qualquer lugar para abri-lo.
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	O PdfCraft funciona offline. Sem telemetria, sem conta e sem processamento em nuvem, a menos que você adicione um provedor.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	Os arquivos abertos no ChangCraft aparecem aqui. Solte um PDF em qualquer lugar para abri-lo.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	O ChangCraft funciona offline. Sem telemetria, sem conta e sem processamento em nuvem, a menos que você adicione um provedor.
 	Measure distance	Medir distância
 	Measure perimeter	Medir perímetro
 	Measure area	Medir área
@@ -2798,3 +2798,19 @@ theme	Appearance	Aparência
 	a table has 1 to {max} columns	uma tabela tem de 1 a {max} colunas
 	the first row number can be at most {max}	o número da primeira linha pode ser no máximo {max}
 	the area, the spacing and the column widths must be numbers, the spacing 0 or more and each width more than 0	a área, o espaçamento e as larguras das colunas devem ser números, o espaçamento 0 ou mais e cada largura maior que 0
+	API key	Chave de API
+	Get a key	Obter uma chave
+	Key removed.	Chave removida.
+	Key saved.	Chave salva.
+	Key set (ends in {tail})	Chave definida (termina em {tail})
+	OpenTyphoon key	Chave do OpenTyphoon
+	Other fonts	Outras fontes
+	Remove key	Remover chave
+	Save and test	Salvar e testar
+	Testing…	Testando…
+	An open-source PDF workbench for Thai language — by Wick	Uma bancada de trabalho de PDF de código aberto para tailandês — por Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Enviar a escrita à mão envia a imagem de cada página para opentyphoon.ai. Não use em documentos com informações pessoais ou confidenciais.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Tailandês (PaddleOCR · offline)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Escrita à mão tailandesa (OpenTyphoon · nuvem)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	texto complexo precisa da fonte TrueType/OpenType de origem completa; carregue essa fonte antes de editar
+	PdfCraft on GitHub	PdfCraft no GitHub

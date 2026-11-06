@@ -528,8 +528,8 @@ fn format_section(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
             .get(app.views[i].id)
             .map(|d| d.text_editor_fonts(ed.page))
             .unwrap_or_default()
-            .into_iter()
-            .map(|f| (f.resource, f.face))
+            .iter()
+            .map(|f| (f.resource.clone(), f.face.clone()))
             .collect();
         let shown = ed.font_shown(&sources);
         let out = crate::format_text_ui::panel(ui, t, &mut ed.look, Some(&mut ed.extras), Fonts { sources: Some(&sources), shown });

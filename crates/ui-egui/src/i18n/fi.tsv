@@ -159,7 +159,7 @@
 	Next page	Seuraava sivu
 	Previous page	Edellinen sivu
 	Current page — type a page number or label (such as iv) and press Enter	Nykyinen sivu – kirjoita sivunumero tai -tunniste (kuten iv) ja paina Enter
-	Welcome to PdfCraft	Tervetuloa PdfCraftiin
+	Welcome to ChangCraft	Tervetuloa ChangCraftiin
 	An open-source PDF workbench — local, private, and scriptable.	Avoimen lähdekoodin PDF-työpöytä – paikallinen, yksityinen ja skriptattava.
 	Join the ArtCraft community	Liity ArtCraft-yhteisöön
 	Get help, share feedback and follow development on Discord.	Hae apua, anna palautetta ja seuraa kehitystä Discordissa.
@@ -167,9 +167,9 @@
 	Use now	Käytä nyt
 	Open file	Avaa tiedosto
 	Recent	Viimeisimmät
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	PdfCraftissa avatut tiedostot näkyvät tässä. Avaa PDF pudottamalla se mihin tahansa.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	ChangCraftissa avatut tiedostot näkyvät tässä. Avaa PDF pudottamalla se mihin tahansa.
 	Privacy	Tietosuoja
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft toimii ilman verkkoyhteyttä. Ei telemetriaa, ei tiliä eikä pilvikäsittelyä, ellei palveluntarjoajaa lisätä.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft toimii ilman verkkoyhteyttä. Ei telemetriaa, ei tiliä eikä pilvikäsittelyä, ellei palveluntarjoajaa lisätä.
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	Skriptit suoritetaan eristetyssä ympäristössä ilman tiedosto- tai verkkoyhteyttä. Kun JavaScript on pois käytöstä, Acrobatin vakiomuotoilu-, tarkistus- ja laskentafunktiot toimivat silti.
 	Back to all tools	Takaisin kaikkiin työkaluihin
 	Close panel	Sulje paneeli
@@ -309,7 +309,7 @@
 	Keyboard shortcuts	Pikanäppäimet
 	Join the ArtCraft Discord	Liity ArtCraftin Discordiin
 	PdfCraft web page	PdfCraftin verkkosivu
-	PdfCraft on GitHub	PdfCraft GitHubissa
+	ChangCraft on GitHub	ChangCraft GitHubissa
 	ArtCraft website	ArtCraftin verkkosivusto
 	Check for updates…	Tarkista päivitykset…
 	About PdfCraft	Tietoja PdfCraftista
@@ -2781,3 +2781,19 @@ theme	Appearance	Teema
 	field names can't contain a period: {name}	kenttien nimissä ei voi olla pistettä: {name}
 	two cells would both be named {name}	kahdella solulla olisi sama nimi {name}
 	a field named {name} already exists	kenttä nimeltä {name} on jo olemassa
+	API key	API-avain
+	Get a key	Hae avain
+	Key removed.	Avain poistettu.
+	Key saved.	Avain tallennettu.
+	Key set (ends in {tail})	Avain asetettu (päättyy: {tail})
+	OpenTyphoon key	OpenTyphoon-avain
+	Other fonts	Muut fontit
+	Remove key	Poista avain
+	Save and test	Tallenna ja testaa
+	Testing…	Testataan…
+	An open-source PDF workbench for Thai language — by Wick	Avoimen lähdekoodin PDF-työpöytä thain kielelle – tekijä Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Käsialan lähetys lähettää jokaisen sivun kuvan opentyphoon.ai-palveluun. Älä käytä sitä asiakirjoihin, joissa on henkilökohtaisia tai luottamuksellisia tietoja.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Thai (PaddleOCR · offline)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Thaimaalainen käsiala (OpenTyphoon · pilvi)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	monimutkainen teksti tarvitsee täydellisen TrueType-/OpenType-lähdefontin; lataa kyseinen fontti ennen muokkausta
+	PdfCraft on GitHub	PdfCraft GitHubissa

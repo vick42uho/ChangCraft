@@ -165,7 +165,7 @@
 	Previous page	前のページ
 	Current page — type a page number or label (such as iv) and press Enter	現在のページ：ページ番号またはラベル（例：iv）を入力して Enter
 	Zoom — type a percentage and press Enter	ズーム — パーセンテージを入力して Enter キーを押します
-	Welcome to PdfCraft	PdfCraft へようこそ
+	Welcome to ChangCraft	ChangCraft へようこそ
 	An open-source PDF workbench — local, private, and scriptable.	ローカルで処理し、プライバシーを守る、スクリプト対応のオープンソース PDF ツール。
 	Join the ArtCraft community	ArtCraft コミュニティに参加
 	Get help, share feedback and follow development on Discord.	Discord で質問やフィードバックを共有し、開発の進捗を確認できます。
@@ -173,9 +173,9 @@
 	Use now	使用する
 	Open file	ファイルを開く
 	Recent	最近使ったファイル
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	PdfCraft で開いたファイルがここに表示されます。PDF をウィンドウにドロップして開くこともできます。
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	ChangCraft で開いたファイルがここに表示されます。PDF をウィンドウにドロップして開くこともできます。
 	Privacy	プライバシー
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft はオフラインで動作します。使用状況の送信やアカウント登録はありません。サービス提供元を追加しない限り、クラウド処理も行いません。
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft はオフラインで動作します。使用状況の送信やアカウント登録はありません。サービス提供元を追加しない限り、クラウド処理も行いません。
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	スクリプトはファイルやネットワークにアクセスできないサンドボックスで実行されます。JavaScript を無効にしても、Acrobat の標準の書式設定・検証・計算関数は使用できます。
 	Back to all tools	すべてのツールに戻る
 	Close panel	パネルを閉じる
@@ -315,7 +315,7 @@
 	Keyboard shortcuts	キーボードショートカット
 	Join the ArtCraft Discord	ArtCraft の Discord に参加
 	PdfCraft web page	PdfCraft の Web 版
-	PdfCraft on GitHub	GitHub の PdfCraft
+	ChangCraft on GitHub	GitHub の ChangCraft
 	ArtCraft website	ArtCraft のウェブサイト
 	Check for updates…	更新を確認…
 	About PdfCraft	PdfCraft について
@@ -2515,3 +2515,19 @@ animation effects	Off	オフ
 	field names can't contain a period: {name}	フィールド名にピリオドは使えません: {name}
 	two cells would both be named {name}	2 つのセルが同じ名前 {name} になります
 	a field named {name} already exists	{name} という名前のフィールドは既にあります
+	API key	API キー
+	Get a key	キーを取得
+	Key removed.	キーを削除しました。
+	Key saved.	キーを保存しました。
+	Key set (ends in {tail})	キーを設定しました（末尾: {tail}）
+	OpenTyphoon key	OpenTyphoon キー
+	Other fonts	その他のフォント
+	Remove key	キーを削除
+	Save and test	保存してテスト
+	Testing…	テスト中…
+	An open-source PDF workbench for Thai language — by Wick	タイ語向けのオープンソース PDF ツール — Wick 制作
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	手書きを送信すると、各ページの画像が opentyphoon.ai に送信されます。個人情報や機密情報を含む文書には使用しないでください。
+	Thai / ภาษาไทย (PaddleOCR · offline)	タイ語 (PaddleOCR · オフライン)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	タイ語の手書き (OpenTyphoon · クラウド)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	複雑なテキストには完全な元の TrueType/OpenType フォントが必要です。編集する前にそのフォントを読み込んでください
+	PdfCraft on GitHub	GitHub の PdfCraft

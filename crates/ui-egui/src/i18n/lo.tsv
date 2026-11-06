@@ -163,7 +163,7 @@
 	Next page	ໜ້າຖັດໄປ
 	Previous page	ໜ້າກ່ອນໜ້າ
 	Current page — type a page number or label (such as iv) and press Enter	ໜ້າປັດຈຸບັນ — ພິມໝາຍເລກໜ້າ ຫຼື ປ້າຍຊື່ (ເຊັ່ນ: iv) ແລ້ວກົດ Enter
-	Welcome to PdfCraft	ຍິນດີຕ້ອນຮັບສູ່ PdfCraft
+	Welcome to ChangCraft	ຍິນດີຕ້ອນຮັບສູ່ ChangCraft
 	An open-source PDF workbench — local, private, and scriptable.	ເຄື່ອງມືຈັດການ PDF ແບບໂອເພນຊອຣ໌ສ — ເຮັດວຽກໃນເຄື່ອງ, ເປັນສ່ວນຕົວ ແລະ ຂຽນສະຄຣິບໄດ້.
 	Join the ArtCraft community	ເຂົ້າຮ່ວມຊຸມຊົນ ArtCraft
 	Get help, share feedback and follow development on Discord.	ຂໍຄວາມຊ່ວຍເຫຼືອ, ແບ່ງປັນຄຳຕິຊົມ ແລະ ຕິດຕາມການພັດທະນາໄດ້ທີ່ Discord.
@@ -171,9 +171,9 @@
 	Use now	ໃຊ້ງານຕອນນີ້
 	Open file	ເປີດໄຟລ໌
 	Recent	ຫຼ້າສຸດ
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	ໄຟລ໌ທີ່ທ່ານເປີດໃນ PdfCraft ຈະສະແດງຢູ່ນີ້. ລາກໄຟລ໌ PDF ມາວາງບ່ອນໃດກໍໄດ້ເພື່ອເປີດ.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	ໄຟລ໌ທີ່ທ່ານເປີດໃນ ChangCraft ຈະສະແດງຢູ່ນີ້. ລາກໄຟລ໌ PDF ມາວາງບ່ອນໃດກໍໄດ້ເພື່ອເປີດ.
 	Privacy	ຄວາມເປັນສ່ວນຕົວ
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft ເຮັດວຽກແບບອອບລາຍ. ບໍ່ມີການສົ່ງຂໍ້ມູນການໃຊ້ງານ, ບໍ່ຕ້ອງມີບັນຊີ ແລະ ບໍ່ມີການປະມວນຜົນເທິງຄລາວ ເວັ້ນເສຍແຕ່ທ່ານຈະເພີ່ມຜູ້ໃຫ້ບໍລິການ.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft ເຮັດວຽກແບບອອບລາຍ. ບໍ່ມີການສົ່ງຂໍ້ມູນການໃຊ້ງານ, ບໍ່ຕ້ອງມີບັນຊີ ແລະ ບໍ່ມີການປະມວນຜົນເທິງຄລາວ ເວັ້ນເສຍແຕ່ທ່ານຈະເພີ່ມຜູ້ໃຫ້ບໍລິການ.
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	ສະຄຣິບເຮັດວຽກໃນ sandbox ໂດຍບໍ່ສາມາດເຂົ້າເຖິງໄຟລ໌ ຫຼື ເຄືອຂ່າຍໄດ້. ເຖິງວ່າຈະປິດ JavaScript, ຟັງຊັນມາດຕະຖານຂອງ Acrobat ສຳລັບການຈັດຮູບແບບ, ການກວດສອບ ແລະ ການຄຳນວນ ກໍຍັງໃຊ້ງານໄດ້.
 	Back to all tools	ກັບໄປຫາເຄື່ອງມືທັງໝົດ
 	Close panel	ປິດແຜງ
@@ -313,7 +313,7 @@
 	Keyboard shortcuts	ປຸ່ມລັດແປ້ນພິມ
 	Join the ArtCraft Discord	ເຂົ້າຮ່ວມ Discord ຂອງ ArtCraft
 	PdfCraft web page	ໜ້າເວັບ PdfCraft
-	PdfCraft on GitHub	PdfCraft ເທິງ GitHub
+	ChangCraft on GitHub	ChangCraft ເທິງ GitHub
 	ArtCraft website	ເວັບໄຊຕ໌ ArtCraft
 	Check for updates…	ກວດສອບການອັບເດດ…
 	About PdfCraft	ກ່ຽວກັບ PdfCraft
@@ -2429,3 +2429,19 @@ animation effects	Off	ປິດ
 	Make properties default	ກຳນົດຄຸນສົມບັດເປັນຄ່າເລີ່ມຕົ້ນ
 	Pages selected	ໜ້າທີ່ເລືອກ
 	Page properties	ຄຸນສົມບັດໜ້າ
+	API key	ກະແຈ API
+	Get a key	ຮັບກະແຈ
+	Key removed.	ລຶບກະແຈແລ້ວ.
+	Key saved.	ບັນທຶກກະແຈແລ້ວ.
+	Key set (ends in {tail})	ຕັ້ງກະແຈແລ້ວ (ລົງທ້າຍດ້ວຍ {tail})
+	OpenTyphoon key	ກະແຈ OpenTyphoon
+	Other fonts	ຟອນອື່ນ
+	Remove key	ລຶບກະແຈ
+	Save and test	ບັນທຶກ ແລະ ທົດສອບ
+	Testing…	ກຳລັງທົດສອບ…
+	An open-source PDF workbench for Thai language — by Wick	ເຄື່ອງມືຈັດການ PDF ແບບໂອເພນຊອຣ໌ສສຳລັບພາສາໄທ — ໂດຍ Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	ການສົ່ງລາຍມືຈະສົ່ງຮູບຂອງແຕ່ລະໜ້າໄປຍັງ opentyphoon.ai. ຢ່າໃຊ້ກັບເອກະສານທີ່ມີຂໍ້ມູນສ່ວນຕົວ ຫຼື ລັບ.
+	Thai / ภาษาไทย (PaddleOCR · offline)	ໄທ (PaddleOCR · ອອບໄລນ໌)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	ລາຍມືໄທ (OpenTyphoon · ຄລາວ)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	ຂໍ້ຄວາມທີ່ສັບສົນຕ້ອງການຟອນ TrueType/OpenType ຕົ້ນສະບັບທີ່ສົມບູນ; ໂຫຼດຟອນນັ້ນກ່ອນແກ້ໄຂ
+	PdfCraft on GitHub	PdfCraft ເທິງ GitHub

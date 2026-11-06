@@ -143,7 +143,7 @@
 	Next page	다음 페이지
 	Previous page	이전 페이지
 	Current page — type a page number or label (such as iv) and press Enter	현재 페이지 — 페이지 번호나 레이블(예: iv)을 입력한 후 Enter 키를 누르세요
-	Welcome to PdfCraft	PdfCraft에 오신 것을 환영합니다
+	Welcome to ChangCraft	ChangCraft에 오신 것을 환영합니다
 	An open-source PDF workbench — local, private, and scriptable.	오픈소스 PDF 워크벤치 — 로컬에서 작동하고, 프라이버시를 지키며, 스크립트를 지원합니다.
 	Join the ArtCraft community	ArtCraft 커뮤니티 참여
 	Get help, share feedback and follow development on Discord.	Discord에서 도움을 받고, 피드백을 공유하고, 개발 현황을 팔로우하세요.
@@ -151,9 +151,9 @@
 	Use now	지금 사용
 	Open file	파일 열기
 	Recent	최근 항목
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	PdfCraft에서 연 파일이 여기에 표시됩니다. PDF를 아무 곳에나 끌어다 놓으면 열립니다.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	ChangCraft에서 연 파일이 여기에 표시됩니다. PDF를 아무 곳에나 끌어다 놓으면 열립니다.
 	Privacy	개인정보 보호
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft는 오프라인으로 작동합니다. 직접 공급자를 추가하지 않는 한 텔레메트리, 계정, 클라우드 처리가 없습니다.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft는 오프라인으로 작동합니다. 직접 공급자를 추가하지 않는 한 텔레메트리, 계정, 클라우드 처리가 없습니다.
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	스크립트는 파일이나 네트워크 접근 없이 샌드박스에서 실행됩니다. JavaScript가 꺼져 있어도 Acrobat의 표준 형식, 유효성 검사 및 계산 함수는 계속 작동합니다.
 	Back to all tools	모든 도구로 돌아가기
 	Close panel	패널 닫기
@@ -293,7 +293,7 @@
 	Keyboard shortcuts	키보드 단축키
 	Join the ArtCraft Discord	ArtCraft Discord 참여하기
 	PdfCraft web page	PdfCraft 웹 페이지
-	PdfCraft on GitHub	GitHub의 PdfCraft
+	ChangCraft on GitHub	GitHub의 ChangCraft
 	ArtCraft website	ArtCraft 웹사이트
 	Check for updates…	업데이트 확인…
 	About PdfCraft	PdfCraft 정보
@@ -2750,3 +2750,19 @@ theme	Appearance	모양
 	field names can't contain a period: {name}	필드 이름에는 마침표를 쓸 수 없습니다: {name}
 	two cells would both be named {name}	두 셀의 이름이 모두 {name}이(가) 됩니다
 	a field named {name} already exists	{name}(이)라는 필드가 이미 있습니다
+	API key	API 키
+	Get a key	키 받기
+	Key removed.	키가 제거되었습니다.
+	Key saved.	키가 저장되었습니다.
+	Key set (ends in {tail})	키 설정됨(끝: {tail})
+	OpenTyphoon key	OpenTyphoon 키
+	Other fonts	기타 글꼴
+	Remove key	키 제거
+	Save and test	저장 및 테스트
+	Testing…	테스트 중…
+	An open-source PDF workbench for Thai language — by Wick	태국어를 위한 오픈소스 PDF 워크벤치 — Wick 제작
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	필기를 보내면 각 페이지의 이미지가 opentyphoon.ai로 전송됩니다. 개인정보나 기밀 정보가 있는 문서에는 사용하지 마세요.
+	Thai / ภาษาไทย (PaddleOCR · offline)	태국어 (PaddleOCR · 오프라인)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	태국어 필기 (OpenTyphoon · 클라우드)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	복잡한 텍스트에는 전체 원본 TrueType/OpenType 글꼴이 필요합니다. 편집하기 전에 해당 글꼴을 불러오세요
+	PdfCraft on GitHub	GitHub의 PdfCraft

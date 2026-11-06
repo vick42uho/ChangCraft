@@ -159,13 +159,14 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, look: &mut AddedText, extras:
                             || lower.contains("charmmanee")
                             || lower.contains("tahoma")
                     };
-                    let (thai_fonts, other_fonts): (Vec<_>, Vec<_>) = list.into_iter().partition(|f| is_thai_name(&f.face) || is_thai_name(&f.family));
+                    let (thai_fonts, other_fonts): (Vec<_>, Vec<_>) =
+                        list.into_iter().partition(|f| is_thai_name(&f.full) || is_thai_name(&f.family));
                     if !thai_fonts.is_empty() {
                         ui.label(egui::RichText::new("🇹🇭 ฟอนต์ไทยในเครื่อง (Installed Thai Fonts)").font(theme::semibold(11.0)).color(t.text_faint));
                         for font in thai_fonts {
-                            if ui.button(&font.face).clicked() {
-                                let lower = font.face.to_ascii_lowercase();
-                                let key = pdfcraft_fonts::embedding::family_key(&font.face);
+                            if ui.button(&font.full).clicked() {
+                                let lower = font.full.to_ascii_lowercase();
+                                let key = pdfcraft_fonts::embedding::family_key(&font.full);
                                 if lower.contains("angsana") {
                                     out.font = Some(FontChoice::Family(FontFamily::AngsanaNew));
                                 } else if lower.contains("cordia") {
@@ -192,7 +193,7 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, look: &mut AddedText, extras:
                         }
                     }
                     for font in other_fonts {
-                        if ui.button(&font.face).clicked() {
+                        if ui.button(&font.full).clicked() {
                             out.font = Some(FontChoice::Installed(font.path, font.index));
                             ui.close();
                         }

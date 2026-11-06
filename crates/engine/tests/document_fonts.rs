@@ -50,7 +50,7 @@ fn exercise(font: Vec<u8>, text: &str, expected_family: &str) {
     let id = s.open("source.pdf", None, document(), None).unwrap();
     let original = pixels(s.get(id).unwrap().display.clone());
     s.apply(id, Edit::RegisterTextFont { page: 0, bytes: Arc::new(font.clone()) }).unwrap();
-    let resource = s.get(id).unwrap().text_editor_fonts(0).into_iter().find(|f| f.bytes == font).unwrap().resource;
+    let resource = s.get(id).unwrap().text_editor_fonts(0).iter().find(|f| f.bytes == font).map(|f| f.resource.clone()).unwrap();
     let style = BlockStyle { resource: Some(resource), width: Some(240.0), ..Default::default() };
     s.apply(id, Edit::EditTextBlock { page: 0, block: 0, text: text.into(), style: style.clone() }).unwrap();
     let edited = s.get(id).unwrap();
@@ -97,4 +97,21 @@ fn contextual_arabic_marks_ligatures_and_mixed_bidi_keep_logical_text_after_reop
         return;
     }
     exercise(font.bytes.to_vec(), "سَلَام 123", "NotoSansArabic-Regular");
+}
+
+/// The Format text panel asks for the page's editor faces every frame, and reading them
+/// decompresses every embedded program on the page: a frame with no change must reuse them.
+#[test]
+fn editor_faces_are_cached_until_the_page_changes() {
+    let font = support::font_fixture::cff_font();
+    let mut s = Session::new();
+    let id = s.open("source.pdf", None, document(), None).unwrap();
+    s.apply(id, Edit::RegisterTextFont { page: 0, bytes: Arc::new(font) }).unwrap();
+    let first = s.get(id).unwrap().text_editor_fonts(0);
+    assert!(!first.is_empty(), "the registered font is an editor face");
+    let again = s.get(id).unwrap().text_editor_fonts(0);
+    assert!(Arc::ptr_eq(&first, &again), "an unchanged frame reuses the faces");
+    s.apply(id, Edit::RotatePages { pages: vec![0], degrees: 90 }).unwrap();
+    let after = s.get(id).unwrap().text_editor_fonts(0);
+    assert!(!Arc::ptr_eq(&first, &after), "an edit reads them again");
 }

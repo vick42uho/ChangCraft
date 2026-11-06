@@ -123,7 +123,7 @@
 	Previous page	Önceki sayfa
 	Current page — type a page number or label (such as iv) and press Enter	Geçerli sayfa — bir sayfa numarası veya etiketi (örneğin iv) yazıp Enter'a basın
 	Zoom — type a percentage and press Enter	Yakınlaştırma — bir yüzde yazıp Enter tuşuna basın
-	Welcome to PdfCraft	PdfCraft'a Hoş Geldiniz
+	Welcome to ChangCraft	ChangCraft'a Hoş Geldiniz
 	An open-source PDF workbench — local, private, and scriptable.	Açık kaynaklı bir PDF çalışma alanı — yerel, gizli ve komut dosyalarıyla yönetilebilir.
 	Join the ArtCraft community	ArtCraft topluluğuna katılın
 	Get help, share feedback and follow development on Discord.	Discord'da yardım alın, geri bildirim paylaşın ve geliştirmeyi takip edin.
@@ -131,9 +131,9 @@
 	Use now	Şimdi kullan
 	Open file	Dosya aç
 	Recent	Son kullanılanlar
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	PdfCraft'ta açtığınız dosyalar burada görünür. Açmak için bir PDF'i herhangi bir yere bırakın.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	ChangCraft'ta açtığınız dosyalar burada görünür. Açmak için bir PDF'i herhangi bir yere bırakın.
 	Privacy	Gizlilik
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft çevrimdışı çalışır. Bir sağlayıcı eklemediğiniz sürece telemetri yok, hesap yok ve bulut işleme yok.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft çevrimdışı çalışır. Bir sağlayıcı eklemediğiniz sürece telemetri yok, hesap yok ve bulut işleme yok.
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	Komut dosyaları dosya veya ağ erişimi olmadan yalıtılmış alanda (sandbox) çalışır. JavaScript kapalıyken bile Acrobat'ın standart biçimlendirme, doğrulama ve hesaplama işlevleri çalışmaya devam eder.
 	Back to all tools	Tüm araçlara geri dön
 	Close panel	Paneli kapat
@@ -273,7 +273,7 @@
 	Keyboard shortcuts	Klavye kısayolları
 	Join the ArtCraft Discord	ArtCraft Discord'una katıl
 	PdfCraft web page	PdfCraft web sayfası
-	PdfCraft on GitHub	GitHub'da PdfCraft
+	ChangCraft on GitHub	GitHub'da ChangCraft
 	ArtCraft website	ArtCraft web sitesi
 	Check for updates…	Güncellemeleri denetle…
 	About PdfCraft	PdfCraft hakkında
@@ -2511,3 +2511,19 @@ animation effects	Off	Kapalı
 	field names can't contain a period: {name}	alan adları nokta içeremez: {name}
 	two cells would both be named {name}	iki hücrenin de adı {name} olurdu
 	a field named {name} already exists	{name} adlı bir alan zaten var
+	API key	API anahtarı
+	Get a key	Anahtar al
+	Key removed.	Anahtar kaldırıldı.
+	Key saved.	Anahtar kaydedildi.
+	Key set (ends in {tail})	Anahtar ayarlandı ({tail} ile biter)
+	OpenTyphoon key	OpenTyphoon anahtarı
+	Other fonts	Diğer yazı tipleri
+	Remove key	Anahtarı kaldır
+	Save and test	Kaydet ve sına
+	Testing…	Sınanıyor…
+	An open-source PDF workbench for Thai language — by Wick	Tayca için açık kaynaklı bir PDF çalışma alanı — Wick tarafından
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	El yazısı gönderildiğinde her sayfanın görüntüsü opentyphoon.ai'ye gönderilir. Kişisel veya gizli bilgi içeren belgelerde kullanmayın.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Tayca (PaddleOCR · çevrimdışı)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Tayca el yazısı (OpenTyphoon · bulut)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	karmaşık metin tam kaynak TrueType/OpenType yazı tipini gerektirir; düzenlemeden önce o yazı tipini yükleyin
+	PdfCraft on GitHub	GitHub'da PdfCraft

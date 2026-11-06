@@ -347,6 +347,25 @@ struct Editor {
     field_appearances: pdfcraft_forms::FieldAppearanceCache,
     /// The text blocks last computed for one page, reused while the document is unchanged.
     text_blocks: TextBlocksCache,
+    /// The embedded faces the text editor offers for one page, reused while the document is
+    /// unchanged: the Format text panel asks for them every frame.
+    editor_fonts: TextEditorFontsCache,
+}
+
+/// One page's editor faces ([`pdfcraft_edit::text::text_editor_fonts`]) and the document state
+/// they were read from. Reading them decompresses every embedded font program on the page, so
+/// the Format text panel must not pay it on each frame. Keyed like [`TextBlocksCache`].
+#[derive(Default)]
+struct TextEditorFontsCache(std::sync::Mutex<Option<CachedTextEditorFonts>>);
+
+/// The document state, the page (0-based) and its editor faces.
+type CachedTextEditorFonts = (pdfcraft_cos::ReadState, usize, Arc<Vec<pdfcraft_edit::text::TextEditorFont>>);
+
+impl Clone for TextEditorFontsCache {
+    fn clone(&self) -> Self {
+        // A poisoned cache only loses the cached faces.
+        Self(std::sync::Mutex::new(self.0.lock().ok().and_then(|c| c.clone())))
+    }
 }
 
 /// One page's text blocks ([`pdfcraft_edit::text_blocks`]) and the document state they were read
@@ -381,6 +400,23 @@ impl Editor {
             *cache = Some((self.cos.read_state(), page, blocks.clone()));
         }
         Ok(blocks)
+    }
+
+    /// The embedded faces the text editor offers for `page` (0-based), from the cache when the
+    /// document hasn't changed.
+    fn editor_fonts(&self, page: usize) -> Result<Arc<Vec<pdfcraft_edit::text::TextEditorFont>>, EditError> {
+        if let Ok(cache) = self.editor_fonts.0.lock()
+            && let Some((state, p, fonts)) = cache.as_ref()
+            && *p == page
+            && state.matches(&self.cos)
+        {
+            return Ok(fonts.clone());
+        }
+        let fonts = Arc::new(pdfcraft_edit::text::text_editor_fonts(&self.cos, page)?);
+        if let Ok(mut cache) = self.editor_fonts.0.lock() {
+            *cache = Some((self.cos.read_state(), page, fonts.clone()));
+        }
+        Ok(fonts)
     }
 }
 
@@ -3681,6 +3717,7 @@ impl Session {
                         appearances: AppearanceCache::default(),
                         field_appearances: pdfcraft_forms::FieldAppearanceCache::default(),
                         text_blocks: TextBlocksCache::default(),
+                        editor_fonts: TextEditorFontsCache::default(),
                     }),
                     None,
                 )

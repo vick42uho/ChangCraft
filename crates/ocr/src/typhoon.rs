@@ -170,7 +170,7 @@ fn os_roots() -> Result<ureq::tls::RootCerts, String> {
 /// Convert RGBA pixels to JPEG bytes.
 pub fn encode_jpeg(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, OcrError> {
     let rgb: Vec<u8> = if pixels.len() == (width * height * 4) as usize {
-        pixels.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect()
+        pixels.as_chunks::<4>().0.iter().flat_map(|p| [p[0], p[1], p[2]]).collect()
     } else if pixels.len() == (width * height * 3) as usize {
         pixels.to_vec()
     } else {

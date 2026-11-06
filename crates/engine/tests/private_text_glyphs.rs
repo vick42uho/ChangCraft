@@ -29,8 +29,12 @@ fn private_new_chinese_glyphs_keep_face_position_save_reopen_and_undo() {
         let source_lines = before.text_lines(page);
         let anchor = source_lines[block.lines[0]].baseline();
         let original_pixels = pixels(before.display.clone(), page);
-        let source_font_bytes: Vec<_> =
-            before.text_editor_fonts(page).into_iter().filter(|f| !f.resource.starts_with("PCApproved")).map(|f| (f.resource, f.bytes)).collect();
+        let source_font_bytes: Vec<_> = before
+            .text_editor_fonts(page)
+            .iter()
+            .filter(|f| !f.resource.starts_with("PCApproved"))
+            .map(|f| (f.resource.clone(), f.bytes.clone()))
+            .collect();
         let draft = format!("{}{new}", block.editor_text);
         let generation = before.edit_generation();
         let layout = before.text_edit_layout(page, index, &draft, &BlockStyle::default()).unwrap();

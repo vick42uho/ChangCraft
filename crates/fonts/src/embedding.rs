@@ -207,16 +207,20 @@ pub fn name_style(name: &str) -> (bool, bool) {
 /// [`matching_faces`], a look-alike family never stands in: `THSarabunPSK` never returns the
 /// bundled `Sarabun`, whose widths and shapes differ.
 pub fn matching_faces_exact(name: &str) -> Vec<&'static crate::CraftFont> {
+    let (is_bold, is_italic) = name_style(name);
+    matching_faces_exact_style(name, is_bold, is_italic)
+}
+
+/// [`matching_faces_exact`] for a run whose weight is known apart from its font name: a PDF can
+/// say bold in `/FontDescriptor` flags (or `FontWeight`) while `/BaseFont` does not.
+pub fn matching_faces_exact_style(name: &str, bold: bool, italic: bool) -> Vec<&'static crate::CraftFont> {
     let key = family_key(name);
     if key.is_empty() {
         return Vec::new();
     }
-    let (is_bold, is_italic) = name_style(name);
-    let mut matches: Vec<&'static crate::CraftFont> = crate::CRAFT_FONTS
-        .iter()
-        .filter(|f| family_key(f.family) == key || family_key(&f.name()) == key)
-        .collect();
-    matches.sort_by_key(|f| style_score(f, is_bold, is_italic));
+    let mut matches: Vec<&'static crate::CraftFont> =
+        crate::CRAFT_FONTS.iter().filter(|f| family_key(f.family) == key || family_key(&f.name()) == key).collect();
+    matches.sort_by_key(|f| style_score(f, bold, italic));
     matches
 }
 
@@ -247,6 +251,16 @@ pub fn font_directories() -> Vec<PathBuf> {
 
 fn is_font_file(path: &std::path::Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("ttf") || e.eq_ignore_ascii_case("otf") || e.eq_ignore_ascii_case("ttc"))
+}
+
+/// Whether an installed file named `stem` is worth opening for family `wanted`.
+///
+/// File names usually carry the family, but not always identically: THSarabunPSK installs as
+/// `THSarabun.ttf`. So accept a name that contains the family or is contained by it. This is a
+/// cheap prefilter only; the family identity is decided later from the font's own names.
+fn installed_name_matches(stem: &str, wanted: &str) -> bool {
+    let stem_key = family_key(stem);
+    !stem_key.is_empty() && (stem_key.contains(wanted) || (stem_key.chars().count() >= 3 && wanted.contains(&stem_key)))
 }
 
 /// A complete font program found on this computer, with its PostScript name.
@@ -292,11 +306,7 @@ pub fn installed_face_in(dirs: &[PathBuf], name: &str, bold: bool, italic: bool)
                 continue;
             }
             let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
-            // Cheap filter before reading: installed file names normally carry the family name.
-            let stem_key = family_key(stem);
-            let stem_match = stem_key.contains(&wanted)
-                || (stem_key.chars().count() >= 3 && wanted.contains(&stem_key));
-            if !stem_match {
+            if !installed_name_matches(stem, &wanted) {
                 continue;
             }
             let Ok(meta) = entry.metadata() else { continue };
@@ -327,7 +337,6 @@ pub fn installed_face_in(dirs: &[PathBuf], name: &str, bold: bool, italic: bool)
     }
     best.map(|(_, program)| program)
 }
-
 
 /// If `bytes` is a TrueType Collection (`ttcf`), extract font `index` as a standalone TrueType / OpenType font (`sfnt`).
 /// If `bytes` is already a standalone font, returns `bytes.to_vec()`.
@@ -889,13 +898,41 @@ mod tests {
         assert!(same_family("BAAAAA+AngsanaNew-BoldItalic", "AngsanaNew"));
         assert_eq!(matching_faces_exact("THSarabunPSK").len(), 0);
 
-        #[cfg(windows)]
-        {
-            let face = installed_face("THSarabunPSK", false, false);
-            if std::path::Path::new("C:/Users/it-dev/AppData/Local/Microsoft/Windows/Fonts/THSarabun.ttf").exists() {
-                assert!(face.is_some(), "THSarabun.ttf should be found for THSarabunPSK");
-                assert_eq!(family_key(&face.unwrap().1), "thsarabunpsk");
-            }
+        // Installed files are matched by name, but THSarabunPSK ships as `THSarabun.ttf`.
+        assert!(installed_name_matches("THSarabun", "thsarabunpsk"));
+        assert!(installed_name_matches("THSarabunPSK", "thsarabunpsk"));
+        assert!(installed_name_matches("Inter-Regular", "inter"));
+        assert!(!installed_name_matches("THSarabunNew", "thsarabunpsk"));
+        assert!(!installed_name_matches("Inter", "thsarabunpsk"));
+        // A two-letter stem is too weak to be trusted as the wanted family.
+        assert!(!installed_name_matches("In", "inter"));
+    }
+
+    #[test]
+    fn a_known_bold_run_takes_the_bundled_bold_face_even_when_the_name_does_not_say_so() {
+        // `/FontDescriptor` flags can say bold while `/BaseFont` doesn't, so the weight comes
+        // from the run, not only the name.
+        if crate::CRAFT_FONTS.iter().any(|f| family_key(f.family) == "sarabun" && f.style == "Bold") {
+            assert_eq!(matching_faces_exact_style("Sarabun", true, false)[0].style, "Bold");
+            assert_eq!(matching_faces_exact_style("Sarabun", false, false)[0].style, "Regular");
         }
+        assert!(matching_faces_exact_style("THSarabunPSK", true, false).is_empty(), "no look-alike family");
+    }
+
+    #[test]
+    fn an_installed_file_is_only_used_for_the_family_it_actually_contains() {
+        let dir = std::env::temp_dir().join(format!("pdfcraft-installed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bytes = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
+        std::fs::write(dir.join("Inter.ttf"), bytes).unwrap();
+        // A file renamed after another family must not pass as that family.
+        std::fs::write(dir.join("InterDisplay.ttf"), bytes).unwrap();
+        let dirs = [dir.clone()];
+        let face = installed_face_in(&dirs, "Inter", false, false).unwrap();
+        assert_eq!(family_key(&face.1), "inter");
+        assert!(installed_face_in(&dirs, "InterDisplay", false, false).is_none());
+        assert!(installed_face_in(&dirs, "NoSuchFamily", false, false).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

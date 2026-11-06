@@ -558,7 +558,7 @@
 	Files are combined from top to bottom. Leave Pages empty to take every page.	Filene slås sammen fra topp til bunn. La Sider stå tomt for å ta med alle sidene.
 	Files are combined in the order shown. Drag them to change it.	Filene slås sammen i rekkefølgen som vises. Dra dem for å endre den.
 	Files for {name}	Filer for {name}
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	Filer du åpner i PdfCraft vises her. Slipp en PDF hvor som helst for å åpne den.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	Filer du åpner i ChangCraft vises her. Slipp en PDF hvor som helst for å åpne den.
 	Fill & Sign dates	Fyll ut og signer-datoer
 	Fill & Sign signature	Fyll ut og signer-signatur
 	Fill Color:	Fyllfarge:
@@ -867,7 +867,7 @@
 	Patterns	Mønstre
 	Patterns (graphics objects)	Mønstre (grafikkobjekter)
 	PdfCraft didn't shut down normally. These documents had changes that were autosaved:	PdfCraft ble ikke avsluttet normalt. Disse dokumentene hadde endringer som ble autolagret:
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft fungerer uten nett. Ingen telemetri, ingen konto og ingen skybehandling med mindre du legger til en leverandør.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft fungerer uten nett. Ingen telemetri, ingen konto og ingen skybehandling med mindre du legger til en leverandør.
 	PdfCraft {c} is up to date.	PdfCraft {c} er oppdatert.
 	PdfCraft {v} is available.	PdfCraft {v} er tilgjengelig.
 	Percentage	Prosent
@@ -1258,7 +1258,7 @@
 	Visible Rectangle	Synlig rektangel
 	Visual	Visuell
 	Warnings	Advarsler
-	Welcome to PdfCraft	Velkommen til PdfCraft
+	Welcome to ChangCraft	Velkommen til ChangCraft
 	What word or phrase would you like to search for?	Hvilket ord eller hvilken frase vil du søke etter?
 	Whole words only	Bare hele ord
 	Width:	Bredde:
@@ -1501,7 +1501,7 @@
 	Page options	Sidealternativer
 	Page transitions	Sideoverganger
 	Paste pages	Lim inn sider
-	PdfCraft on GitHub	PdfCraft på GitHub
+	ChangCraft on GitHub	ChangCraft på GitHub
 	PdfCraft web page	PdfCraft-nettside
 	Perimeter	Omkrets
 	Pin folder to Home…	Fest mappe til Hjem…
@@ -2694,3 +2694,19 @@ key	Space	Mellomrom
 # Page gaps (AI-assisted, not separately native-reviewed)
 	Show gaps between pages	Vis mellomrom mellom sidene
 	Hide gaps to join page edges. Margins inside the PDF remain unchanged.	Skjul mellomrommene slik at sidekantene møtes. Margene inne i PDF-en endres ikke.
+	API key	API-nøkkel
+	Get a key	Hent en nøkkel
+	Key removed.	Nøkkelen er fjernet.
+	Key saved.	Nøkkelen er lagret.
+	Key set (ends in {tail})	Nøkkel angitt (slutter på {tail})
+	OpenTyphoon key	OpenTyphoon-nøkkel
+	Other fonts	Andre skrifter
+	Remove key	Fjern nøkkel
+	Save and test	Lagre og test
+	Testing…	Tester…
+	An open-source PDF workbench for Thai language — by Wick	En PDF-arbeidsbenk med åpen kildekode for thai – av Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Når du sender håndskrift, sendes bildet av hver side til opentyphoon.ai. Ikke bruk det på dokumenter med personopplysninger eller konfidensielt innhold.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Thai (PaddleOCR · frakoblet)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Thai-håndskrift (OpenTyphoon · sky)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	sammensatt tekst trenger den fullstendige TrueType-/OpenType-kildefonten; last inn den fonten før du redigerer
+	PdfCraft on GitHub	PdfCraft på GitHub

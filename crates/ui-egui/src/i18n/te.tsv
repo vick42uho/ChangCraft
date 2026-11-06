@@ -142,7 +142,7 @@ comment menu	Edit	సవరించు
 	Previous page	మునుపటి పేజీ
 	Current page — type a page number or label (such as iv) and press Enter	ప్రస్తుత పేజీ — పేజీ సంఖ్యను లేదా లేబుల్‌ను (iv వంటిది) టైప్ చేసి Enter నొక్కండి
 	Zoom — type a percentage and press Enter	జూమ్ — శాతాన్ని టైప్ చేసి Enter నొక్కండి
-	Welcome to PdfCraft	PdfCraftకు స్వాగతం
+	Welcome to ChangCraft	ChangCraftకు స్వాగతం
 	An open-source PDF workbench — local, private, and scriptable.	ఓపెన్-సోర్స్ PDF వర్క్‌బెంచ్ — మీ కంప్యూటర్‌లోనే నడుస్తుంది, గోప్యంగా ఉంటుంది, స్క్రిప్ట్‌లతో ఆటోమేట్ చేయవచ్చు.
 	Join the ArtCraft community	ArtCraft కమ్యూనిటీలో చేరండి
 	Get help, share feedback and follow development on Discord.	Discordలో సహాయం పొందండి, మీ అభిప్రాయాన్ని పంచుకోండి, అభివృద్ధిని అనుసరించండి.
@@ -150,9 +150,9 @@ comment menu	Edit	సవరించు
 	Use now	ఇప్పుడే ఉపయోగించు
 	Open file	ఫైల్‌ను తెరువు
 	Recent	ఇటీవలి
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	PdfCraftలో మీరు తెరిచే ఫైల్‌లు ఇక్కడ కనిపిస్తాయి. PDFను తెరవడానికి దాన్ని ఎక్కడైనా లాగి వదలండి.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	ChangCraftలో మీరు తెరిచే ఫైల్‌లు ఇక్కడ కనిపిస్తాయి. PDFను తెరవడానికి దాన్ని ఎక్కడైనా లాగి వదలండి.
 	Privacy	గోప్యత
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft ఆఫ్‌లైన్‌లో పనిచేస్తుంది. టెలిమెట్రీ లేదు, ఖాతా అవసరం లేదు, మీరు ప్రొవైడర్‌ను జోడిస్తే తప్ప క్లౌడ్ ప్రాసెసింగ్ ఉండదు.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft ఆఫ్‌లైన్‌లో పనిచేస్తుంది. టెలిమెట్రీ లేదు, ఖాతా అవసరం లేదు, మీరు ప్రొవైడర్‌ను జోడిస్తే తప్ప క్లౌడ్ ప్రాసెసింగ్ ఉండదు.
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	స్క్రిప్ట్‌లు ఫైల్ లేదా నెట్‌వర్క్ యాక్సెస్ లేని శాండ్‌బాక్స్‌లో నడుస్తాయి. JavaScript ఆఫ్‌లో ఉన్నా, Acrobat ప్రామాణిక ఫార్మాట్, ధృవీకరణ, గణన ఫంక్షన్‌లు పనిచేస్తాయి.
 	Back to all tools	అన్ని సాధనాలకు తిరిగి వెళ్లు
 	Close panel	ప్యానెల్‌ను మూసివేయి
@@ -292,7 +292,7 @@ comment menu	Edit	సవరించు
 	Keyboard shortcuts	కీబోర్డ్ షార్ట్‌కట్‌లు
 	Join the ArtCraft Discord	ArtCraft Discordలో చేరండి
 	PdfCraft web page	PdfCraft వెబ్ పేజీ
-	PdfCraft on GitHub	GitHubలో PdfCraft
+	ChangCraft on GitHub	GitHubలో ChangCraft
 	ArtCraft website	ArtCraft వెబ్‌సైట్
 	Check for updates…	అప్‌డేట్‌ల కోసం తనిఖీ చేయి…
 	About PdfCraft	PdfCraft గురించి
@@ -2424,3 +2424,19 @@ animation effects	Off	ఆఫ్
 	field names can't contain a period: {name}	ఫీల్డ్ పేర్లలో చుక్క ఉండకూడదు: {name}
 	two cells would both be named {name}	రెండు గడులకూ {name} అనే పేరు వస్తుంది
 	a field named {name} already exists	{name} అనే ఫీల్డ్ ఇప్పటికే ఉంది
+	API key	API కీ
+	Get a key	కీ పొందండి
+	Key removed.	కీ తొలగించబడింది.
+	Key saved.	కీ సేవ్ చేయబడింది.
+	Key set (ends in {tail})	కీ సెట్ చేయబడింది ({tail}తో ముగుస్తుంది)
+	OpenTyphoon key	OpenTyphoon కీ
+	Other fonts	ఇతర ఫాంట్లు
+	Remove key	కీ తొలగించండి
+	Save and test	సేవ్ చేసి పరీక్షించండి
+	Testing…	పరీక్షిస్తోంది…
+	An open-source PDF workbench for Thai language — by Wick	థాయ్ భాష కోసం ఓపెన్-సోర్స్ PDF వర్క్‌బెంచ్ — Wick రూపొందించినది
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	చేతిరాతను పంపినప్పుడు ప్రతి పేజీ చిత్రం opentyphoon.aiకి పంపబడుతుంది. వ్యక్తిగత లేదా గోప్య సమాచారం ఉన్న పత్రాలపై దీన్ని ఉపయోగించవద్దు.
+	Thai / ภาษาไทย (PaddleOCR · offline)	థాయ్ (PaddleOCR · ఆఫ్‌లైన్)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	థాయ్ చేతిరాత (OpenTyphoon · క్లౌడ్)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	సంక్లిష్ట వచనానికి పూర్తి మూల TrueType/OpenType ఫాంట్ అవసరం; సవరించే ముందు ఆ ఫాంట్‌ను లోడ్ చేయండి
+	PdfCraft on GitHub	GitHubలో PdfCraft

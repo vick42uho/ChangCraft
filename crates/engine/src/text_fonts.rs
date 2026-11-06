@@ -6,7 +6,10 @@ pub struct FontFile {
     pub path: PathBuf,
     pub index: u32,
     pub family: String,
+    /// The PostScript name, which is what `text_font_import` reports and what a PDF names.
     pub face: String,
+    /// The full name, which is what a font picker shows (`TH SarabunPSK`, not `THSarabunPSK`).
+    pub full: String,
 }
 
 /// Standard user-installed font folders; discovery is performed only on request.
@@ -52,8 +55,8 @@ pub fn discover(roots: &[PathBuf]) -> Vec<FontFile> {
                 {
                     continue;
                 }
-                if let Ok((family, _, face)) = pdfcraft_fonts::embedding::names_with_full(&face_bytes) {
-                    files.push(FontFile { path: path.clone(), index: idx, family, face });
+                if let Ok((family, face, full)) = pdfcraft_fonts::embedding::names_with_full(&face_bytes) {
+                    files.push(FontFile { path: path.clone(), index: idx, family, face, full });
                     matched = true;
                 }
             }

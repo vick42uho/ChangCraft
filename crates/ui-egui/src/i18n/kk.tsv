@@ -126,7 +126,7 @@
 	Previous page	Алдыңғы бет
 	Current page — type a page number or label (such as iv) and press Enter	Ағымдағы бет — бет нөмірін немесе белгісін (мысалы, iv) теріңіз де, Enter пернесін басыңыз
 	Zoom — type a percentage and press Enter	Масштаб — пайызды енгізіп, Enter пернесін басыңыз
-	Welcome to PdfCraft	PdfCraft-ге қош келдіңіз
+	Welcome to ChangCraft	ChangCraft-ге қош келдіңіз
 	An open-source PDF workbench — local, private, and scriptable.	Ашық бастапқы кодты PDF жұмыс орны — жергілікті, жеке әрі скрипттерді қолдайтын.
 	Join the ArtCraft community	ArtCraft қауымдастығына қосылыңыз
 	Get help, share feedback and follow development on Discord.	Көмек алыңыз, пікір бөлісіңіз және Discord-тағы әзірлеуді қадағалаңыз.
@@ -134,9 +134,9 @@
 	Use now	Дәл қазір пайдалану
 	Open file	Файлды ашу
 	Recent	Соңғы
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	PdfCraft-те ашқан файлдарыңыз осында көрсетіледі. PDF файлын ашу үшін оны кез келген жерге апарып тастаңыз.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	ChangCraft-те ашқан файлдарыңыз осында көрсетіледі. PDF файлын ашу үшін оны кез келген жерге апарып тастаңыз.
 	Privacy	Жекелік
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft офлайн жұмыс істейді. Провайдер қоспағаныңызша телеметрия да, тіркелгі де, бұлтта өңдеу де жоқ.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft офлайн жұмыс істейді. Провайдер қоспағаныңызша телеметрия да, тіркелгі де, бұлтта өңдеу де жоқ.
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	Скрипттер файлға да, желіге де қатынасы жоқ құмсалғышта орындалады. JavaScript өшірулі тұрса да, Acrobat-тың стандартты пішімдеу, тексеру және есептеу функциялары әлі де жұмыс істейді.
 	Back to all tools	Барлық құралдарға оралу
 	Close panel	Панельді жабу
@@ -275,7 +275,7 @@
 	Keyboard shortcuts	Пернетақта тіркесімдері
 	Join the ArtCraft Discord	ArtCraft Discord-ына қосылыңыз
 	PdfCraft web page	PdfCraft веб-сайты
-	PdfCraft on GitHub	GitHub-тағы PdfCraft
+	ChangCraft on GitHub	GitHub-тағы ChangCraft
 	ArtCraft website	ArtCraft веб-сайты
 	Check for updates…	Жаңартуларды тексеру…
 	About PdfCraft	PdfCraft туралы
@@ -2513,3 +2513,19 @@ animation effects	Off	Өшірулі
 	field names can't contain a period: {name}	өріс атауларында нүкте болмауы керек: {name}
 	two cells would both be named {name}	екі ұяшықтың да атауы {name} болар еді
 	a field named {name} already exists	{name} атты өріс бар
+	API key	API кілті
+	Get a key	Кілт алу
+	Key removed.	Кілт жойылды.
+	Key saved.	Кілт сақталды.
+	Key set (ends in {tail})	Кілт орнатылды ({tail} соңымен)
+	OpenTyphoon key	OpenTyphoon кілті
+	Other fonts	Басқа қаріптер
+	Remove key	Кілтті жою
+	Save and test	Сақтап, тексеру
+	Testing…	Тексерілуде…
+	An open-source PDF workbench for Thai language — by Wick	Тай тіліне арналған ашық бастапқы кодты PDF құралы — Wick жасаған
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Қолжазбаны жіберу әр беттің суретін opentyphoon.ai қызметіне жібереді. Жеке немесе құпия ақпараты бар құжаттарда пайдаланбаңыз.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Тай тілі (PaddleOCR · желісіз)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Тай қолжазбасы (OpenTyphoon · бұлт)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	күрделі мәтін толық бастапқы TrueType/OpenType қаріпін қажет етеді; өңдеу алдында сол қаріпті жүктеңіз
+	PdfCraft on GitHub	GitHub-тағы PdfCraft

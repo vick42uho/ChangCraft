@@ -143,7 +143,7 @@
 	Next page	अगला पृष्ठ
 	Previous page	पिछला पृष्ठ
 	Current page — type a page number or label (such as iv) and press Enter	वर्तमान पृष्ठ — पृष्ठ संख्या या लेबल (जैसे iv) टाइप करें और Enter दबाएँ
-	Welcome to PdfCraft	PdfCraft में आपका स्वागत है
+	Welcome to ChangCraft	ChangCraft में आपका स्वागत है
 	An open-source PDF workbench — local, private, and scriptable.	एक ओपन-सोर्स पीडीएफ़ वर्कबेंच — स्थानीय, निजी और स्क्रिप्टेबल।
 	Join the ArtCraft community	ArtCraft समुदाय से जुड़ें
 	Get help, share feedback and follow development on Discord.	Discord पर सहायता प्राप्त करें, प्रतिक्रिया साझा करें और विकास पर नज़र रखें।
@@ -151,9 +151,9 @@
 	Use now	अभी उपयोग करें
 	Open file	फ़ाइल खोलें
 	Recent	हाल की फ़ाइलें
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	आप PdfCraft में जो फ़ाइलें खोलते हैं वे यहाँ दिखाई देती हैं। खोलने के लिए पीडीएफ़ कहीं भी छोड़ दें।
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	आप ChangCraft में जो फ़ाइलें खोलते हैं वे यहाँ दिखाई देती हैं। खोलने के लिए पीडीएफ़ कहीं भी छोड़ दें।
 	Privacy	गोपनीयता
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft ऑफ़लाइन काम करता है। जब तक आप कोई प्रोवाइडर न जोड़ें, न टेलीमेट्री है, न खाता और न ही क्लाउड प्रोसेसिंग।
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft ऑफ़लाइन काम करता है। जब तक आप कोई प्रोवाइडर न जोड़ें, न टेलीमेट्री है, न खाता और न ही क्लाउड प्रोसेसिंग।
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	स्क्रिप्ट ऐसे सैंडबॉक्स में चलती हैं जिसमें फ़ाइल या नेटवर्क एक्सेस नहीं होता। JavaScript बंद होने पर भी Acrobat के मानक format, validate और calculate फ़ंक्शन काम करते हैं।
 	Back to all tools	सभी टूल पर वापस जाएँ
 	Close panel	पैनल बंद करें
@@ -293,7 +293,7 @@
 	Keyboard shortcuts	कीबोर्ड शॉर्टकट
 	Join the ArtCraft Discord	ArtCraft Discord से जुड़ें
 	PdfCraft web page	PdfCraft वेबपेज
-	PdfCraft on GitHub	GitHub पर PdfCraft
+	ChangCraft on GitHub	GitHub पर ChangCraft
 	ArtCraft website	ArtCraft वेबसाइट
 	Check for updates…	अपडेट की जाँच करें…
 	About PdfCraft	PdfCraft के बारे में
@@ -2750,3 +2750,19 @@ theme	Appearance	स्वरूप
 	field names can't contain a period: {name}	फ़ील्ड के नामों में पूर्ण विराम (.) नहीं हो सकता: {name}
 	two cells would both be named {name}	दो सेल का नाम {name} हो जाएगा
 	a field named {name} already exists	{name} नाम का फ़ील्ड पहले से मौजूद है
+	API key	API कुंजी
+	Get a key	कुंजी प्राप्त करें
+	Key removed.	कुंजी हटा दी गई।
+	Key saved.	कुंजी सहेजी गई।
+	Key set (ends in {tail})	कुंजी सेट की गई ({tail} पर समाप्त)
+	OpenTyphoon key	OpenTyphoon कुंजी
+	Other fonts	अन्य फ़ॉन्ट
+	Remove key	कुंजी हटाएँ
+	Save and test	सहेजें और परखें
+	Testing…	परीक्षण हो रहा है…
+	An open-source PDF workbench for Thai language — by Wick	थाई भाषा के लिए एक ओपन-सोर्स पीडीएफ़ वर्कबेंच — Wick द्वारा
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	हैंडराइटिंग भेजने पर हर पृष्ठ की तस्वीर opentyphoon.ai पर भेजी जाती है। व्यक्तिगत या गोपनीय जानकारी वाले दस्तावेज़ों पर इसका उपयोग न करें।
+	Thai / ภาษาไทย (PaddleOCR · offline)	थाई (PaddleOCR · ऑफ़लाइन)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	थाई हैंडराइटिंग (OpenTyphoon · क्लाउड)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	जटिल टेक्स्ट के लिए पूरा स्रोत TrueType/OpenType फ़ॉन्ट चाहिए; संपादन से पहले वह फ़ॉन्ट लोड करें
+	PdfCraft on GitHub	GitHub पर PdfCraft

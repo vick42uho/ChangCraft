@@ -48,11 +48,6 @@ fn parse(body: &str) -> Result<Release, String> {
 }
 
 #[cfg(test)]
-fn now_unix() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
-}
-
-#[cfg(test)]
 fn rate_limited(reset: Option<&str>, now: u64) -> String {
     const FALLBACK: &str = "GitHub is limiting update checks for now (shared hourly quota); try again later";
     let wait = reset.and_then(|r| r.trim().parse::<u64>().ok()).and_then(|reset| reset.checked_sub(now)).filter(|&wait| wait > 0);

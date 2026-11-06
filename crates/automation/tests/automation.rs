@@ -2422,7 +2422,7 @@ fn headers_watermarks_and_backgrounds_through_tools() {
     let face = saved.resolve(fonts.get(b"PCCour").expect("Courier is added")).as_dict().cloned().unwrap();
     assert_eq!(face.name(b"BaseFont"), Some(&b"Courier"[..]));
     let refused = a.call("doc_header_footer", &json!({ "doc": mono, "header_left": "X", "font": "Arial" }));
-    assert!(matches!(refused, Err(ToolError::InvalidArgs(e)) if e.contains("Courier")));
+    assert!(matches!(&refused, Err(ToolError::InvalidArgs(e)) if e.contains("Courier")), "{refused:?}");
 }
 
 #[test]

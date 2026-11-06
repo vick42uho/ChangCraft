@@ -47,13 +47,24 @@ All contributors and AI agents working on this codebase **must** adhere strictly
   - `extract_ttc_face(bytes, index)` unpacks any specific face from a `.ttc` into a standalone TrueType font binary on-the-fly.
   - This preserves `fsType = 0x0008` (Editable Embedding) without violating copyright, since fonts are read from the user's local Windows installation at runtime.
 - **Key Mechanics**:
-  - Embedded Thai fonts (`Sarabun`, `Noto Sans Thai`, `IBM Plex Sans Thai`, plus discovered system fonts like `Angsana New`) are subsetted and embedded as PDF `Type0` composite fonts with `Identity-H` encoding and a `ToUnicode` CMap.
+  - Embedded Thai fonts (`Sarabun`, `Noto Sans Thai`, `IBM Plex Sans Thai`, plus discovered system fonts like `Angsana New`) become PDF `Type0` composite fonts with `Identity-H` encoding and a `ToUnicode` CMap.
+  - Edit paths embed the **complete** program (`embed`), so a later edit can add glyphs; generated appearances may map only the glyphs they use (`embed_mapping`) while keeping the full source program.
   - This ensures small PDF size, high fidelity across all PDF viewers (Edge, Acrobat, Preview), and copy/search capability.
   - **Bold/Italic Preservation**: When editing text in `crates/edit/src/text.rs`, if the original text was bold or italic, the engine maintains the bold/italic variant (`Sarabun-Bold`, `NotoSansThai-Bold`, `AngsanaNew-Bold`) rather than dropping to regular.
   - **Font Name Cleaning & Deduplication**:
     - Random 6-letter subset prefixes (`BAAAAA+`, `AAAAAA+`) are stripped when displaying font pickers in `crates/ui-egui/src/format_text_ui.rs`.
     - Duplicate font family entries in UI dropdowns are deduplicated by postscript/family name.
     - System Thai fonts (`Angsana New`, `Cordia New`, `Browallia New`, `Kanit`, `Prompt`, `TH SarabunPSK`) are pinned directly under `🇹🇭 ฟอนต์ไทยในเครื่อง (Installed Thai Fonts)` in the UI dropdown.
+
+### 2.3.1 Editing keeps the document's exact font family
+- **Identity**: only the 6-letter subset prefix (`ABCDEF+`) and the style suffix (`-Bold`, `-Italic`, `-BoldItalic`) are ignored. `family_key`/`same_family` therefore keep `THSarabunPSK` distinct from `Sarabun`, and from `Sarabun New`. The loose `matching_faces` (name similarity) stays for render-time fallbacks only.
+- **Face chain when existing text is edited** (`crates/edit/src/text.rs`, `crates/edit/src/text_regions.rs`):
+  1. the document's own embedded program for that family, when it is complete (a subset that never had a character cannot gain it);
+  2. otherwise a bundled craft-fonts face of the **same** family (`matching_faces_exact`);
+  3. otherwise, for Thai only, the same family installed on this computer (`pdfcraft_fonts::embedding::installed_face`), read at runtime and never bundled, committed or copied into the app.
+- **No look-alike substitution**: Thai text with no complete same-family face is refused with the family, the character (`… has no glyph for … (U+0E…)`), and what to do (install the family, or *Load font…*). Latin, Cyrillic and Japanese keep their previous Type 3 / Helvetica fallbacks; the installed-font lookup is not consulted for them, so their behaviour is unchanged.
+- **Installed lookup details**: `installed_face` scans `font_directories()`, uses the file name only as a cheap prefilter (`THSarabun.ttf` is opened for family `THSarabunPSK`), decides identity from the font's own family / PostScript / full names, rejects programs whose `fsType` forbids editable embedding, and caches per session.
+- **Tests**: `crates/fonts/src/embedding.rs` (`family_keys_distinguish_lookalike_families`, `an_installed_file_is_only_used_for_the_family_it_actually_contains`, `a_known_bold_run_takes_the_bundled_bold_face_even_when_the_name_does_not_say_so`), `crates/edit/src/tests.rs` (`a_new_character_comes_from_the_source_fonts_own_embedded_program`), `crates/engine/tests/document_fonts.rs` (`editor_faces_are_cached_until_the_page_changes`).
 
 ### 2.4 Forms (AcroForms) & Annotations (FreeText, Watermarks, Header/Footer)
 - **Files**: `crates/forms/src/appearance.rs`, `crates/annot/src/appearance.rs`.

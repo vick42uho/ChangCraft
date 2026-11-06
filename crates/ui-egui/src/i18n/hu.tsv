@@ -136,7 +136,7 @@
 	Previous page	Előző oldal
 	Current page — type a page number or label (such as iv) and press Enter	Aktuális oldal — írj be egy oldalszámot vagy címkét (például iv), majd nyomd meg az Entert
 	Zoom — type a percentage and press Enter	Nagyítás – írjon be egy százalékértéket, és nyomja meg az Entert
-	Welcome to PdfCraft	Üdvözöljük a PdfCraftban
+	Welcome to ChangCraft	Üdvözöljük a ChangCraftban
 	An open-source PDF workbench — local, private, and scriptable.	Nyílt forráskódú PDF-munkapad — helyi, privát és parancsfájlokkal vezérelhető.
 	Join the ArtCraft community	Csatlakozz az ArtCraft közösséghez
 	Get help, share feedback and follow development on Discord.	Kérj segítséget, oszd meg a véleményed, és kövesd a fejlesztést a Discordon.
@@ -144,9 +144,9 @@
 	Use now	Használat most
 	Open file	Fájl megnyitása
 	Recent	Legutóbbiak
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	A PdfCraftban megnyitott fájlok itt jelennek meg. Húzz ide egy PDF-et a megnyitáshoz.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	A ChangCraftban megnyitott fájlok itt jelennek meg. Húzz ide egy PDF-et a megnyitáshoz.
 	Privacy	Adatvédelem
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	A PdfCraft offline működik. Nincs telemetria, nincs fiók, és nincs felhőfeldolgozás, amíg nem adsz hozzá szolgáltatót.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	A ChangCraft offline működik. Nincs telemetria, nincs fiók, és nincs felhőfeldolgozás, amíg nem adsz hozzá szolgáltatót.
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	A szkriptek homokozóban futnak, fájl- és hálózat-hozzáférés nélkül. Kikapcsolt JavaScript mellett az Acrobat szabványos formázó, ellenőrző és számoló függvényei továbbra is működnek.
 	Back to all tools	Vissza az összes eszközhöz
 	Close panel	Panel bezárása
@@ -286,7 +286,7 @@
 	Keyboard shortcuts	Billentyűparancsok
 	Join the ArtCraft Discord	Csatlakozás az ArtCraft Discordhoz
 	PdfCraft web page	A PdfCraft weblapja
-	PdfCraft on GitHub	PdfCraft a GitHubon
+	ChangCraft on GitHub	ChangCraft a GitHubon
 	ArtCraft website	Az ArtCraft webhelye
 	Check for updates…	Frissítések keresése…
 	About PdfCraft	A PdfCraftról
@@ -2514,3 +2514,19 @@ animation effects	Off	Ki
 	field names can't contain a period: {name}	a mezőnevek nem tartalmazhatnak pontot: {name}
 	two cells would both be named {name}	két cella neve is {name} lenne
 	a field named {name} already exists	már van {name} nevű mező
+	API key	API-kulcs
+	Get a key	Kulcs beszerzése
+	Key removed.	Kulcs eltávolítva.
+	Key saved.	Kulcs mentve.
+	Key set (ends in {tail})	Kulcs beállítva (végződés: {tail})
+	OpenTyphoon key	OpenTyphoon-kulcs
+	Other fonts	Egyéb betűtípusok
+	Remove key	Kulcs eltávolítása
+	Save and test	Mentés és tesztelés
+	Testing…	Tesztelés…
+	An open-source PDF workbench for Thai language — by Wick	Nyílt forráskódú PDF-munkapad a thai nyelvhez – Wicktől
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	A kézírás elküldése minden oldal képét elküldi az opentyphoon.ai szolgáltatásnak. Ne használd személyes vagy bizalmas információkat tartalmazó dokumentumokon.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Thai (PaddleOCR · offline)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Thai kézírás (OpenTyphoon · felhő)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	az összetett szöveghez a teljes forrás TrueType/OpenType betűtípus kell; szerkesztés előtt töltsd be azt a betűtípust
+	PdfCraft on GitHub	PdfCraft a GitHubon

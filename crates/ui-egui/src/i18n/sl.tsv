@@ -786,7 +786,7 @@
 	Files are combined from top to bottom. Leave Pages empty to take every page.	Datoteke se združijo od zgoraj navzdol. Če pustite Strani prazno, se vzamejo vse strani.
 	Files are combined in this order. Leave Pages empty to take every page.	Datoteke se združijo v tem vrstnem redu. Če pustite Strani prazno, se vzamejo vse strani.
 	Files for {name}	Datoteke za {name}
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	Datoteke, ki jih odprete v PdfCraftu, se prikažejo tukaj. Spustite PDF kamor koli, da ga odprete.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	Datoteke, ki jih odprete v ChangCraftu, se prikažejo tukaj. Spustite PDF kamor koli, da ga odprete.
 	Fill	Izpolni
 	Fill & Sign	Izpolni in podpiši
 	Fill & Sign: add text	Izpolni in podpiši: dodaj besedilo
@@ -1352,9 +1352,9 @@
 	Patterns	Vzorci
 	Patterns (graphics objects)	Vzorci (grafični objekti)
 	PdfCraft didn't shut down normally. These documents had changes that were autosaved:	PdfCraft se ni zaprl običajno. Ti dokumenti so imeli samodejno shranjene spremembe:
-	PdfCraft on GitHub	PdfCraft na GitHubu
+	ChangCraft on GitHub	ChangCraft na GitHubu
 	PdfCraft web page	Spletna stran PdfCraft
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft deluje brez povezave. Brez telemetrije, brez računa in brez obdelave v oblaku, razen če dodate ponudnika.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft deluje brez povezave. Brez telemetrije, brez računa in brez obdelave v oblaku, razen če dodate ponudnika.
 	PdfCraft {c} is up to date.	PdfCraft {c} je posodobljen.
 	PdfCraft {v} is available.	Na voljo je PdfCraft {v}.
 	People may need more time to respond. Check that nothing has a time limit.	Ljudje bodo morda potrebovali več časa za odziv. Preverite, da nič nima časovne omejitve.
@@ -2013,7 +2013,7 @@
 	Warnings	Opozorila
 	Watermark	Vodni žig
 	Weak	Šibko
-	Welcome to PdfCraft	Dobrodošli v PdfCraftu
+	Welcome to ChangCraft	Dobrodošli v ChangCraftu
 	What word or phrase would you like to search for?	Katero besedo ali besedno zvezo želite poiskati?
 	Whole words only	Samo cele besede
 	Width	Širina
@@ -2520,3 +2520,19 @@ animation effects	Off	Izklopljeni
 	field names can't contain a period: {name}	imena polj ne smejo vsebovati pike: {name}
 	two cells would both be named {name}	dve celici bi imeli enako ime {name}
 	a field named {name} already exists	polje z imenom {name} že obstaja
+	API key	Ključ API
+	Get a key	Pridobi ključ
+	Key removed.	Ključ je odstranjen.
+	Key saved.	Ključ je shranjen.
+	Key set (ends in {tail})	Ključ je nastavljen (konča se z {tail})
+	OpenTyphoon key	Ključ OpenTyphoon
+	Other fonts	Druge pisave
+	Remove key	Odstrani ključ
+	Save and test	Shrani in preizkusi
+	Testing…	Preizkušanje…
+	An open-source PDF workbench for Thai language — by Wick	Odprtokodno delovno okolje za PDF za tajščino — avtor Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Pošiljanje rokopisa pošlje sliko vsake strani v opentyphoon.ai. Ne uporabljajte ga za dokumente z osebnimi ali zaupnimi podatki.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Tajščina (PaddleOCR · brez povezave)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Tajski rokopis (OpenTyphoon · oblak)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	zapleteno besedilo potrebuje celotno izvorno pisavo TrueType/OpenType; naložite to pisavo pred urejanjem
+	PdfCraft on GitHub	PdfCraft na GitHubu

@@ -563,7 +563,7 @@
 	Files are combined from top to bottom. Leave Pages empty to take every page.	Failai jungiami iš viršaus į apačią. Palikite lauką „Puslapiai“ tuščią, jei norite įtraukti visus puslapius.
 	Files are combined in the order shown. Drag them to change it.	Failai sujungiami rodoma tvarka. Vilkite juos, kad ją pakeistumėte.
 	Files for {name}	Failai: {name}
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	Čia rodomi „PdfCraft“ atverti failai. Įkelkite PDF bet kurioje vietoje, kad jį atvertumėte.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	Čia rodomi „ChangCraft“ atverti failai. Įkelkite PDF bet kurioje vietoje, kad jį atvertumėte.
 	Fill & Sign dates	Datos pildymo ir pasirašymo įrankyje
 	Fill & Sign signature	Parašas pildymo ir pasirašymo įrankyje
 	Fill Color:	Užpildo spalva:
@@ -909,7 +909,7 @@
 	Patterns	Šablonai
 	Patterns (graphics objects)	Šablonai (grafiniai objektai)
 	PdfCraft didn't shut down normally. These documents had changes that were autosaved:	„PdfCraft“ buvo uždaryta netinkamai. Šių dokumentų pakeitimai buvo automatiškai įrašyti:
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	„PdfCraft“ veikia neprisijungus. Nerenkami telemetrijos duomenys, nereikia paskyros ir nenaudojamos debesijos paslaugos, nebent pridėtumėte jų teikėją.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	„ChangCraft“ veikia neprisijungus. Nerenkami telemetrijos duomenys, nereikia paskyros ir nenaudojamos debesijos paslaugos, nebent pridėtumėte jų teikėją.
 	PdfCraft {c} is up to date.	Naudojate naujausią „PdfCraft“ versiją {c}.
 	PdfCraft {v} is available.	Išleista „PdfCraft“ versija {v}.
 	Percentage	Procentai
@@ -1306,7 +1306,7 @@
 	Visible Rectangle	Matomo stačiakampio anotacija
 	Visual	Vaizdinis
 	Warnings	Įspėjimai
-	Welcome to PdfCraft	Sveiki atvykę į „PdfCraft“
+	Welcome to ChangCraft	Sveiki atvykę į „ChangCraft“
 	What word or phrase would you like to search for?	Kokio žodžio ar frazės norite ieškoti?
 	Whole words only	Tik ištisi žodžiai
 	Width:	Plotis:
@@ -1549,7 +1549,7 @@
 	Page options	Puslapio parinktys
 	Page transitions	Puslapių perėjimai
 	Paste pages	Įdėti puslapius
-	PdfCraft on GitHub	„PdfCraft“ „GitHub“ puslapis
+	ChangCraft on GitHub	„ChangCraft“ „GitHub“ puslapis
 	PdfCraft web page	„PdfCraft“ svetainė
 	Perimeter	Perimetras
 	Pin folder to Home…	Prisegti aplanką prie pradžios lango…
@@ -2774,3 +2774,19 @@ theme	Appearance	Išvaizda
 	a table has 1 to {max} columns	lentelėje gali būti nuo 1 iki {max} stulpelių
 	the first row number can be at most {max}	pirmosios eilutės numeris gali būti ne didesnis nei {max}
 	the area, the spacing and the column widths must be numbers, the spacing 0 or more and each width more than 0	sritis, tarpai ir stulpelių pločiai turi būti skaičiai, tarpai – 0 arba daugiau, o kiekvienas plotis – daugiau nei 0
+	API key	API raktas
+	Get a key	Gauti raktą
+	Key removed.	Raktas pašalintas.
+	Key saved.	Raktas išsaugotas.
+	Key set (ends in {tail})	Raktas nustatytas (baigiasi {tail})
+	OpenTyphoon key	OpenTyphoon raktas
+	Other fonts	Kiti šriftai
+	Remove key	Pašalinti raktą
+	Save and test	Išsaugoti ir išbandyti
+	Testing…	Bandoma…
+	An open-source PDF workbench for Thai language — by Wick	Atvirojo kodo PDF aplinka tajų kalbai — sukūrė Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Siunčiant rankraštį kiekvieno puslapio vaizdas siunčiamas į opentyphoon.ai. Nenaudokite jo dokumentuose su asmenine ar konfidencialia informacija.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Tajų (PaddleOCR · neprisijungus)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Tajų rankraštis (OpenTyphoon · debesis)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	sudėtingam tekstui reikia viso šaltinio TrueType/OpenType šrifto; įkelkite tą šriftą prieš redaguodami
+	PdfCraft on GitHub	„PdfCraft“ „GitHub“ puslapis

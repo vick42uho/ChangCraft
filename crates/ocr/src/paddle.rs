@@ -74,7 +74,7 @@ impl Paddle {
         }
 
         let rgb: Vec<u8> = if pixels.len() == (width * height * 4) as usize {
-            pixels.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect()
+            pixels.as_chunks::<4>().0.iter().flat_map(|p| [p[0], p[1], p[2]]).collect()
         } else if pixels.len() == (width * height * 3) as usize {
             pixels.to_vec()
         } else {
@@ -92,10 +92,10 @@ impl Paddle {
             let crop_w = (r - l).max(2.0) as usize;
             let crop_h = (bot - t).max(2.0) as usize;
 
-            if let Some(text) = self.read_box(&rgb, width, height, [l as usize, t as usize, crop_w, crop_h])? {
-                if !text.trim().is_empty() {
-                    words.push(Word { text, rect: [l, t, r, bot] });
-                }
+            if let Some(text) = self.read_box(&rgb, width, height, [l as usize, t as usize, crop_w, crop_h])?
+                && !text.trim().is_empty()
+            {
+                words.push(Word { text, rect: [l, t, r, bot] });
             }
         }
 

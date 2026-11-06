@@ -142,7 +142,7 @@
 	Toggle fit page / fit width	Εναλλαγή προσαρμογής στη σελίδα / στο πλάτος
 	Next page	Επόμενη σελίδα
 	Previous page	Προηγούμενη σελίδα
-	Welcome to PdfCraft	Καλώς ορίσατε στο PdfCraft
+	Welcome to ChangCraft	Καλώς ορίσατε στο ChangCraft
 	An open-source PDF workbench — local, private, and scriptable.	Ένα εργαλείο PDF ανοιχτού κώδικα — τοπικό, ιδιωτικό και αυτοματοποιήσιμο.
 	Join the ArtCraft community	Γίνετε μέλος της κοινότητας ArtCraft
 	Get help, share feedback and follow development on Discord.	Βρείτε βοήθεια, μοιραστείτε σχόλια και παρακολουθήστε την ανάπτυξη στο Discord.
@@ -151,7 +151,7 @@
 	Open file	Άνοιγμα αρχείου
 	Recent	Πρόσφατα
 	Privacy	Απόρρητο
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	Το PdfCraft λειτουργεί χωρίς σύνδεση στο διαδίκτυο. Χωρίς τηλεμετρία, λογαριασμό ή επεξεργασία στο νέφος, εκτός αν προσθέσετε εσείς υπηρεσία.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	Το ChangCraft λειτουργεί χωρίς σύνδεση στο διαδίκτυο. Χωρίς τηλεμετρία, λογαριασμό ή επεξεργασία στο νέφος, εκτός αν προσθέσετε εσείς υπηρεσία.
 	Date	Ημερομηνία
 	Rotate	Περιστροφή
 	Delete	Διαγραφή
@@ -285,7 +285,7 @@
 	Text, marks and signatures become part of the page. Other comments stay editable.	Το κείμενο, τα σημάδια και οι υπογραφές γίνονται μέρος της σελίδας. Τα υπόλοιπα σχόλια παραμένουν επεξεργάσιμα.
 	Current page — type a page number or label (such as iv) and press Enter	Τρέχουσα σελίδα — πληκτρολογήστε αριθμό ή ετικέτα σελίδας (π.χ. iv) και πατήστε Enter
 	Zoom — type a percentage and press Enter	Ζουμ — πληκτρολογήστε ένα ποσοστό και πατήστε Enter
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	Τα αρχεία που ανοίγετε στο PdfCraft εμφανίζονται εδώ. Σύρετε ένα PDF οπουδήποτε για να το ανοίξετε.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	Τα αρχεία που ανοίγετε στο ChangCraft εμφανίζονται εδώ. Σύρετε ένα PDF οπουδήποτε για να το ανοίξετε.
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	Τα σενάρια εκτελούνται σε απομονωμένο περιβάλλον χωρίς πρόσβαση σε αρχεία ή δίκτυο. Με απενεργοποιημένη τη JavaScript, οι τυπικές λειτουργίες μορφοποίησης, επικύρωσης και υπολογισμού του Acrobat εξακολουθούν να λειτουργούν.
 	Move up	Μετακίνηση πάνω
 	Move down	Μετακίνηση κάτω
@@ -1689,7 +1689,7 @@
 	Number pages…	Αρίθμηση σελίδων…
 	Join the ArtCraft Discord	Συμμετοχή στο Discord του ArtCraft
 	PdfCraft web page	Ιστότοπος του PdfCraft
-	PdfCraft on GitHub	PdfCraft στο GitHub
+	ChangCraft on GitHub	ChangCraft στο GitHub
 	ArtCraft website	Ιστότοπος ArtCraft
 	Check for updates…	Έλεγχος για ενημερώσεις…
 	Export a PDF	Εξαγωγή PDF
@@ -2521,3 +2521,19 @@ animation effects	Off	Ανενεργά
 	field names can't contain a period: {name}	τα ονόματα πεδίων δεν μπορούν να περιέχουν τελεία: {name}
 	two cells would both be named {name}	δύο κελιά θα είχαν το ίδιο όνομα {name}
 	a field named {name} already exists	υπάρχει ήδη πεδίο με όνομα {name}
+	API key	Κλειδί API
+	Get a key	Λήψη κλειδιού
+	Key removed.	Το κλειδί αφαιρέθηκε.
+	Key saved.	Το κλειδί αποθηκεύτηκε.
+	Key set (ends in {tail})	Το κλειδί ορίστηκε (τελειώνει σε {tail})
+	OpenTyphoon key	Κλειδί OpenTyphoon
+	Other fonts	Άλλες γραμματοσειρές
+	Remove key	Αφαίρεση κλειδιού
+	Save and test	Αποθήκευση και δοκιμή
+	Testing…	Δοκιμή…
+	An open-source PDF workbench for Thai language — by Wick	Ένα εργαλείο PDF ανοιχτού κώδικα για την ταϊλανδέζικη γλώσσα — από τον Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Η αποστολή χειρογραφίας στέλνει την εικόνα κάθε σελίδας στο opentyphoon.ai. Μην τη χρησιμοποιείτε σε έγγραφα με προσωπικές ή εμπιστευτικές πληροφορίες.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Ταϊλανδικά (PaddleOCR · εκτός σύνδεσης)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Ταϊλανδική χειρογραφία (OpenTyphoon · cloud)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	το σύνθετο κείμενο χρειάζεται την πλήρη γραμματοσειρά πηγής TrueType/OpenType· φορτώστε την πριν από την επεξεργασία
+	PdfCraft on GitHub	PdfCraft στο GitHub

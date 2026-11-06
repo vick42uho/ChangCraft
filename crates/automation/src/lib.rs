@@ -614,22 +614,23 @@ impl Automation {
                 if bytes.len() > 16 << 20 {
                     return Err(ToolError::InvalidArgs("font input exceeds 16 MiB".into()));
                 }
-                let before: Vec<_> = self.doc(&a)?.text_editor_fonts(page).into_iter().map(|f| f.resource).collect();
+                let before: Vec<_> = self.doc(&a)?.text_editor_fonts(page).iter().map(|f| f.resource.clone()).collect();
                 let mut out = self.apply(&a, Edit::RegisterTextFont { page, bytes: Arc::new(bytes) })?;
                 let added = self
                     .doc(&a)?
                     .text_editor_fonts(page)
-                    .into_iter()
-                    .find(|f| !before.contains(&f.resource) && !f.resource.starts_with("PCApproved"));
-                if let Some(f) = added {
-                    out["resource"] = json!(f.resource);
-                    out["font"] = json!(f.face);
+                    .iter()
+                    .find(|f| !before.contains(&f.resource) && !f.resource.starts_with("PCApproved"))
+                    .map(|f| (f.resource.clone(), f.face.clone()));
+                if let Some((resource, face)) = added {
+                    out["resource"] = json!(resource);
+                    out["font"] = json!(face);
                 }
                 out
             }
             "text_fonts" => {
                 let page = self.page(&a)?;
-                json!({"fonts": self.doc(&a)?.text_editor_fonts(page).into_iter().map(|f| json!({"resource":f.resource,"font":f.face,"full_face":f.resource.starts_with("PCFull"),"preview_only":f.resource.starts_with("PCApproved")})).collect::<Vec<_>>()})
+                json!({"fonts": self.doc(&a)?.text_editor_fonts(page).iter().map(|f| json!({"resource":f.resource.clone(),"font":f.face.clone(),"full_face":f.resource.starts_with("PCFull"),"preview_only":f.resource.starts_with("PCApproved")})).collect::<Vec<_>>()})
             }
             "text_edit_layout" => {
                 let page = self.page(&a)?;
@@ -653,7 +654,8 @@ impl Automation {
                     let b = info.user_to_view(r[2] as f32, r[3] as f32);
                     [a[0].min(b[0]), a[1].min(b[1]), a[0].max(b[0]), a[1].max(b[1])]
                 };
-                let fonts: Vec<_> = doc.text_editor_fonts(page).into_iter().map(|f| json!({"resource": f.resource, "face": f.face})).collect();
+                let fonts: Vec<_> =
+                    doc.text_editor_fonts(page).iter().map(|f| json!({"resource": f.resource.clone(), "face": f.face.clone()})).collect();
                 json!({ "page": page + 1, "paragraph": k, "source_rect": view_rect(layout.source_rect),
                     "draft_rect": layout.draft_rect.map(view_rect), "overflow": layout.overflow, "embedded_fonts": fonts })
             }
@@ -694,7 +696,11 @@ impl Automation {
                         "browallia" | "browallianew" | "browalia" => pdfcraft_engine::FontFamily::BrowalliaNew,
                         "notosansthai" | "noto" => pdfcraft_engine::FontFamily::NotoSansThai,
                         "ibmplexsansthai" | "ibm" => pdfcraft_engine::FontFamily::IBMPlexSansThai,
-                        other => return Err(ToolError::InvalidArgs(format!("unknown font {other:?}"))),
+                        other => {
+                            return Err(ToolError::InvalidArgs(format!(
+                                "unknown font {other:?} (Helvetica, Times, Courier, Sarabun, AngsanaNew, CordiaNew, BrowalliaNew, NotoSansThai, IBMPlexSansThai)"
+                            )));
+                        }
                     };
                     style.family = Some((family, a.opt_bool("bold")?.unwrap_or(false), a.opt_bool("italic")?.unwrap_or(false)));
                 }
@@ -1327,7 +1333,9 @@ impl Automation {
                     Some("NotoSansThai" | "noto" | "noto_sans_thai") => pdfcraft_engine::FontFamily::NotoSansThai,
                     Some("IBMPlexSansThai" | "ibm" | "ibm_plex_sans_thai") => pdfcraft_engine::FontFamily::IBMPlexSansThai,
                     Some(other) => {
-                        return Err(ToolError::InvalidArgs(format!("unrecognized font: {other:?}")));
+                        return Err(ToolError::InvalidArgs(format!(
+                            "font must be \"Helvetica\", \"Times\", \"Courier\", \"Sarabun\", \"AngsanaNew\", \"CordiaNew\", \"BrowalliaNew\", \"NotoSansThai\" or \"IBMPlexSansThai\", not {other:?}"
+                        )));
                     }
                 };
                 hf.color = color("color", hf.color)?;

@@ -1787,7 +1787,7 @@
 	Read	閱讀
 	Convert	轉換
 	E-Sign	電子簽署
-	Welcome to PdfCraft	歡迎使用 PdfCraft
+	Welcome to ChangCraft	歡迎使用 ChangCraft
 	An open-source PDF workbench — local, private, and scriptable.	開源 PDF 工作台，在本機處理、保護隱私，並支援指令碼。
 	Recommended tools	推薦工具
 	Use now	立即使用
@@ -1827,7 +1827,7 @@
 	Get help, share feedback and follow development on Discord.	在 Discord 取得協助、提供意見並追蹤開發進度。
 	Join our Discord	加入 Discord 社群
 	PdfCraft web page	PdfCraft 網頁
-	PdfCraft on GitHub	GitHub 上的 PdfCraft
+	ChangCraft on GitHub	GitHub 上的 ChangCraft
 	ArtCraft website	ArtCraft 網站
 	Check for updates…	尋找更新…
 	About PdfCraft	關於 PdfCraft
@@ -1840,8 +1840,8 @@
 	Add background…	新增背景…
 	Prepare a form	準備表單
 	Digitally sign	數位簽署
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	在 PdfCraft 開啟過的檔案會顯示在這裡。將 PDF 拖曳至視窗即可開啟。
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft 可離線使用，不收集遙測資料，也不需要帳號。只有在您新增服務供應商後，才會使用雲端處理。
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	在 ChangCraft 開啟過的檔案會顯示在這裡。將 PDF 拖曳至視窗即可開啟。
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft 可離線使用，不收集遙測資料，也不需要帳號。只有在您新增服務供應商後，才會使用雲端處理。
 	Double-click	滑鼠按兩下
 	PDF/A…	PDF/A…
 	Microsoft Word (.docx)	Microsoft Word（.docx）
@@ -2465,3 +2465,19 @@ animation effects	Off	關
 	field names can't contain a period: {name}	欄位名稱不能包含句點：{name}
 	two cells would both be named {name}	兩個儲存格的名稱都會是 {name}
 	a field named {name} already exists	已有名為 {name} 的欄位
+	API key	API 金鑰
+	Get a key	取得金鑰
+	Key removed.	已移除金鑰。
+	Key saved.	已儲存金鑰。
+	Key set (ends in {tail})	已設定金鑰（結尾為 {tail}）
+	OpenTyphoon key	OpenTyphoon 金鑰
+	Other fonts	其他字型
+	Remove key	移除金鑰
+	Save and test	儲存並測試
+	Testing…	正在測試…
+	An open-source PDF workbench for Thai language — by Wick	適合泰語的開源 PDF 工作台——由 Wick 製作
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	傳送手寫內容會將每一頁的影像傳送到 opentyphoon.ai。請勿用於包含個人或機密資訊的文件。
+	Thai / ภาษาไทย (PaddleOCR · offline)	泰語 / （PaddleOCR · 離線）
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	泰語手寫 / （OpenTyphoon · 雲端）
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	複雜文字需要完整的來源 TrueType/OpenType 字型；編輯前請載入該字型
+	PdfCraft on GitHub	GitHub 上的 PdfCraft

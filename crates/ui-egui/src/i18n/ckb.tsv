@@ -165,7 +165,7 @@
 	Previous page	پەڕەی پێشوو
 	Current page — type a page number or label (such as iv) and press Enter	پەڕەی ئێستا — ژمارەی پەڕەیەک یان نیشانەکەی بنووسە (وەک iv) و Enter دابگرە
 	Zoom — type a percentage and press Enter	زووم — ڕێژەیەکی سەدی بنووسە و Enter دابگرە
-	Welcome to PdfCraft	بەخێربێیت بۆ PdfCraft
+	Welcome to ChangCraft	بەخێربێیت بۆ ChangCraft
 	An open-source PDF workbench — local, private, and scriptable.	مێزێکی کاری سەرچاوەکراوە بۆ PDF — ناوخۆیی، تایبەت و بەرنامەڕێژکراو.
 	Join the ArtCraft community	بەشداریکردن لە کۆمەڵگەی ArtCraft
 	Get help, share feedback and follow development on Discord.	یارمەتی وەربگرە، بۆچوونەکانت بڵاو بکەرەوە و بەدوای پەرەپێداندا بکەوە لە Discord.
@@ -173,9 +173,9 @@
 	Use now	ئێستا بەکاری بهێنە
 	Open file	کردنەوەی فایل
 	Recent	دواییەکان
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	ئەو فایلانەی لە PdfCraft دەیانکەیتەوە لێرە دەردەکەون. PDFێک لە هەرکوێ دابنێ بۆ کردنەوەی.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	ئەو فایلانەی لە ChangCraft دەیانکەیتەوە لێرە دەردەکەون. PDFێک لە هەرکوێ دابنێ بۆ کردنەوەی.
 	Privacy	تایبەتێتی
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft بەبێ ئینتەرنێت کار دەکات. نە پێوانەی دوورەوە، نە هەژمار و نە پێواژۆی هەور هەیە مەگەر دابینکەرێک زیاد بکەیت.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft بەبێ ئینتەرنێت کار دەکات. نە پێوانەی دوورەوە، نە هەژمار و نە پێواژۆی هەور هەیە مەگەر دابینکەرێک زیاد بکەیت.
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	سکریپتەکان لە ژینگەیەکی جیاکراوەدا جێبەجێ دەبن بەبێ دەستگەیشتن بە فایل یان تۆڕ. کاتێک JavaScript دابخرێت، فەرمانە ستانداردەکانی Acrobat بۆ فۆرمات، پشتڕاستکردنەوە و ژمێرکاریکردن هێشتا کار دەکەن.
 	Back to all tools	گەڕانەوە بۆ هەموو ئامرازەکان
 	Close panel	داخستنی پانێڵ
@@ -315,7 +315,7 @@
 	Keyboard shortcuts	کورتەڕێگاکانی تەختەکلیل
 	Join the ArtCraft Discord	بەشداریکردن لە Discordی ArtCraft
 	PdfCraft web page	لاپەڕەی وێبی PdfCraft
-	PdfCraft on GitHub	PdfCraft لە GitHub
+	ChangCraft on GitHub	ChangCraft لە GitHub
 	ArtCraft website	ماڵپەڕی ArtCraft
 	Check for updates…	پشکنین بۆ نوێکردنەوەکان…
 	About PdfCraft	دەربارەی PdfCraft
@@ -2713,3 +2713,19 @@ certificate	Version	وەشان
 	Make properties default	کردنی تایبەتمەندییەکان بە بنەڕەتی
 	Pages selected	پەڕە هەڵبژێردراوەکان
 	Page properties	تایبەتمەندییەکانی پەڕە
+	API key	کلیلی API
+	Get a key	کلیک وەربگرە
+	Key removed.	کلیلەکە لابرا.
+	Key saved.	کلیلەکە پاشەکەوت کرا.
+	Key set (ends in {tail})	کلیل دانرا (بە {tail} کۆتایی دێت)
+	OpenTyphoon key	کلیلی OpenTyphoon
+	Other fonts	فۆنتەکانی تر
+	Remove key	کلیل لابەرە
+	Save and test	پاشەکەوت بکە و تاقی بکەرەوە
+	Testing…	تاقیکردنەوە…
+	An open-source PDF workbench for Thai language — by Wick	مێزێکی کاری سەرچاوەکراوە بۆ PDF بۆ زمانی تایلەندی — لەلایەن Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	ناردنی دەستنووس وێنەی هەر لاپەڕەیەک بۆ opentyphoon.ai دەنێرێت. بۆ بەڵگەنامەکانی تێدا زانیاری کەسی یان نهێنی بەکاری مەهێنە.
+	Thai / ภาษาไทย (PaddleOCR · offline)	تایلەندی (PaddleOCR · بێ ئینتەرنێت)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	دەستنووسی تایلەندی (OpenTyphoon · هەور)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	دەقی ئاڵۆز پێویستی بە فۆنتی سەرچاوەی تەواوی TrueType/OpenType هەیە؛ پێش دەستکاریکردن ئەو فۆنتە باربکە
+	PdfCraft on GitHub	PdfCraft لە GitHub

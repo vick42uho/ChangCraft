@@ -161,7 +161,7 @@
 	Previous page	Página anterior
 	Current page — type a page number or label (such as iv) and press Enter	Página actual: escribe un número o una etiqueta de página (por ejemplo, iv) y pulsa Intro
 	Zoom — type a percentage and press Enter	Zoom: escribe un porcentaje y pulsa Intro
-	Welcome to PdfCraft	Te damos la bienvenida a PdfCraft
+	Welcome to ChangCraft	Te damos la bienvenida a ChangCraft
 	An open-source PDF workbench — local, private, and scriptable.	Un banco de trabajo PDF de código abierto: local, privado y automatizable.
 	Join the ArtCraft community	Únete a la comunidad de ArtCraft
 	Get help, share feedback and follow development on Discord.	Recibe ayuda, comparte tu opinión y sigue el desarrollo en Discord.
@@ -169,9 +169,9 @@
 	Use now	Usar ahora
 	Open file	Abrir archivo
 	Recent	Recientes
-	Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.	Los archivos que abras en PdfCraft aparecerán aquí. Suelta un PDF en cualquier parte para abrirlo.
+	Files you open in ChangCraft appear here. Drop a PDF anywhere to open it.	Los archivos que abras en ChangCraft aparecerán aquí. Suelta un PDF en cualquier parte para abrirlo.
 	Privacy	Privacidad
-	PdfCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	PdfCraft funciona sin conexión. Sin telemetría, sin cuenta y sin procesamiento en la nube, salvo que añadas un proveedor.
+	ChangCraft works offline. No telemetry, no account, and no cloud processing unless you add a provider.	ChangCraft funciona sin conexión. Sin telemetría, sin cuenta y sin procesamiento en la nube, salvo que añadas un proveedor.
 	Scripts run in a sandbox without file or network access. With JavaScript off, Acrobat's standard format, validate and calculate functions still work.	Los scripts se ejecutan en un entorno aislado, sin acceso a archivos ni a la red. Con JavaScript desactivado, las funciones estándar de formato, validación y cálculo de Acrobat siguen funcionando.
 	Back to all tools	Volver a todas las herramientas
 	Close panel	Cerrar panel
@@ -311,7 +311,7 @@
 	Keyboard shortcuts	Atajos de teclado
 	Join the ArtCraft Discord	Únete al Discord de ArtCraft
 	PdfCraft web page	Página web de PdfCraft
-	PdfCraft on GitHub	PdfCraft en GitHub
+	ChangCraft on GitHub	ChangCraft en GitHub
 	ArtCraft website	Sitio web de ArtCraft
 	Check for updates…	Buscar actualizaciones…
 	About PdfCraft	Acerca de PdfCraft
@@ -2836,3 +2836,19 @@ theme	Appearance	Aspecto
 	field names can't contain a period: {name}	los nombres de campo no pueden contener un punto: {name}
 	two cells would both be named {name}	dos celdas se llamarían {name}
 	a field named {name} already exists	ya existe un campo llamado {name}
+	API key	Clave de API
+	Get a key	Obtener una clave
+	Key removed.	Se ha eliminado la clave.
+	Key saved.	Se ha guardado la clave.
+	Key set (ends in {tail})	Clave establecida (termina en {tail})
+	OpenTyphoon key	Clave de OpenTyphoon
+	Other fonts	Otras fuentes
+	Remove key	Quitar clave
+	Save and test	Guardar y probar
+	Testing…	Probando…
+	An open-source PDF workbench for Thai language — by Wick	Un banco de trabajo PDF de código abierto para tailandés: por Wick
+	Reading handwriting sends each page's picture to opentyphoon.ai. Don't use it on documents with personal or confidential information.	Enviar escritura a mano envía la imagen de cada página a opentyphoon.ai. No lo uses en documentos con información personal o confidencial.
+	Thai / ภาษาไทย (PaddleOCR · offline)	Tailandés (PaddleOCR · sin conexión)
+	Thai handwriting / ลายมือไทย (OpenTyphoon · cloud)	Escritura a mano tailandesa (OpenTyphoon · nube)
+	complex text needs the complete source TrueType/OpenType face; load that font before editing	el texto complejo necesita la fuente TrueType/OpenType de origen completa; carga esa fuente antes de editar
+	PdfCraft on GitHub	PdfCraft en GitHub
