@@ -321,8 +321,16 @@ fn group_layout(lines: &[TextLine], mixed: bool) -> Vec<TextBlock> {
     blocks
 }
 
+/// How closely a face's weight and slant match the run, for choosing among full faces of one
+/// family. A PDF can say bold in `/FontDescriptor` flags while `/BaseFont` does not.
+fn style_score(m: &Metrics, bold: bool, italic: bool) -> i32 {
+    let weight = if m.bold == bold { 2 } else { -2 };
+    let slant = if m.italic == italic { 1 } else { -1 };
+    weight + slant
+}
+
 /// Shape in the source or an explicitly registered matching full face. Never use interface fonts.
-fn shape_source(
+pub(crate) fn shape_source(
     doc: &Document,
     fonts: &Dict,
     name: &str,
@@ -335,38 +343,59 @@ fn shape_source(
     }
     let source =
         fonts.get(name.as_bytes()).and_then(|f| doc.dict(f)).ok_or_else(|| EditError::Invalid("the shaped text has no font resource".into()))?;
-    let family = Metrics::from_dict(doc, &source).base_font;
-    let mut candidates = vec![source];
+    let source_metrics = Metrics::from_dict(doc, &source);
+    let family = source_metrics.base_font.clone();
+    let (want_bold, want_italic) = (source_metrics.bold, source_metrics.italic);
+    // A subset may keep a character's mapping after its outline was dropped, so only a complete
+    // program is trusted to shape. The document's own complete face comes first, in the source's
+    // weight: a bold sibling must not draw a regular run. A subset never stands in for a complete
+    // face; when the family has none, the caller refuses rather than drawing missing glyphs.
+    let mut candidates: Vec<(i32, Dict)> = Vec::new();
+    if !source_metrics.subset {
+        candidates.push((style_score(&source_metrics, want_bold, want_italic), source.clone()));
+    }
     candidates.extend(
         fonts
             .iter()
             .filter_map(|(_, f)| doc.dict(f))
-            .filter(|f| pdfcraft_fonts::embedding::same_family(&Metrics::from_dict(doc, f).base_font, &family)),
+            .map(|f| {
+                let m = Metrics::from_dict(doc, &f);
+                (m, f)
+            })
+            .filter(|(m, _)| !m.subset && pdfcraft_fonts::embedding::same_family(&m.base_font, &family))
+            .map(|(m, f)| (style_score(&m, want_bold, want_italic), f)),
     );
-    for font in candidates {
+    candidates.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+    for (_, font) in candidates {
         if let Some(bytes) = pdfcraft_fonts::pdf::embedded_sfnt(doc, &font)
             && pdfcraft_fonts::embedding::covers(&bytes, text)
             && let Ok(shaped) = pdfcraft_fonts::source_shaping::shape(&bytes, text)
         {
-            return Ok(Some((bytes, shaped, family)));
+            // Name the face after the program, never after the subset it completes: a name such
+            // as `ABCDEE+AngsanaNew` would stop later edits matching the family again. The
+            // PostScript name keeps the weight (`THSarabunPSK-Bold`).
+            let name = pdfcraft_fonts::embedding::names(&bytes).map_or_else(|_| family.clone(), |(_, name)| name);
+            return Ok(Some((bytes, shaped, name)));
         }
     }
-    // A bundled face of exactly this family.
-    if let Some(face) =
-        pdfcraft_fonts::embedding::matching_faces_exact(&family).into_iter().find(|f| pdfcraft_fonts::embedding::covers(f.bytes, text))
+    // A bundled face of exactly this family, in the source's weight.
+    if let Some(face) = pdfcraft_fonts::embedding::matching_faces_exact_style(&family, want_bold, want_italic)
+        .into_iter()
+        .find(|f| pdfcraft_fonts::embedding::covers(f.bytes, text))
         && let Ok(shaped) = pdfcraft_fonts::source_shaping::shape(face.bytes, text)
     {
-        return Ok(Some((face.bytes.to_vec(), shaped, family)));
+        let name = pdfcraft_fonts::embedding::names(face.bytes).map_or_else(|_| face.name(), |(_, name)| name);
+        return Ok(Some((face.bytes.to_vec(), shaped, name)));
     }
     // The same family installed on this computer (e.g. TH SarabunPSK). Read only for Thai text:
     // other scripts keep the fallback they had.
-    let (is_bold, is_italic) = pdfcraft_fonts::embedding::name_style(&family);
     if text.chars().any(|c| matches!(u32::from(c), 0x0E00..=0x0E7F))
-        && let Some(program) = pdfcraft_fonts::embedding::installed_face(&family, is_bold, is_italic)
+        && let Some(program) = pdfcraft_fonts::embedding::installed_face(&family, want_bold, want_italic)
         && pdfcraft_fonts::embedding::covers(&program.0, text)
         && let Ok(shaped) = pdfcraft_fonts::source_shaping::shape(&program.0, text)
     {
-        return Ok(Some((program.0.clone(), shaped, family)));
+        let name = pdfcraft_fonts::embedding::names(&program.0).map_or_else(|_| family.clone(), |(_, name)| name);
+        return Ok(Some((program.0.clone(), shaped, name)));
     }
     let family = family.rsplit('+').next().unwrap_or(&family);
     if text.chars().any(|c| matches!(u32::from(c), 0x0E00..=0x0E7F)) {
@@ -651,9 +680,11 @@ pub(super) fn rewrite_styled_block(
                 resource.clone()
             } else if metrics.get(&source.font).is_some_and(|m| source_encodes(m, &s)) {
                 source.font.clone()
-            } else if let Some((name, _)) = metrics.iter().find(|(_, m)| {
-                pdfcraft_fonts::embedding::same_family(&m.base_font, &source.base_font) && source_encodes(m, &s)
-            }) {
+            } else if let Some((name, _)) = metrics
+                .iter()
+                .filter(|(_, m)| !m.subset && pdfcraft_fonts::embedding::same_family(&m.base_font, &source.base_font) && source_encodes(m, &s))
+                .max_by_key(|(_, m)| style_score(m, source.bold, source.italic))
+            {
                 name.clone()
             } else if let Some(name) = embed_family_face(
                 doc,

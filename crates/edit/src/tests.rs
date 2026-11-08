@@ -5400,6 +5400,73 @@ fn a_subset_program_is_not_trusted_for_new_characters_and_the_error_names_the_ch
     assert_eq!(page_content_bytes(&doc, 0), before);
 }
 
+/// One page font resource for [`super::text::shape_source`], with `program` as its
+/// embedded TrueType face. The name is what the PDF says, which need not match the program.
+fn probe_font(doc: &mut Document, base: &str, program: &[u8], bold: bool) -> Object {
+    let file = doc.add(Object::Stream(Stream::flate(Dict::new(), program)));
+    let mut descriptor = Dict::new();
+    descriptor.set(b"Type".to_vec(), Object::name("FontDescriptor"));
+    descriptor.set(b"FontName".to_vec(), Object::name(base));
+    descriptor.set(b"FontFile2".to_vec(), Object::Ref(file));
+    if bold {
+        descriptor.set(b"Flags".to_vec(), Object::Int(262_144));
+    }
+    let mut font = Dict::new();
+    font.set(b"Type".to_vec(), Object::name("Font"));
+    font.set(b"Subtype".to_vec(), Object::name("TrueType"));
+    font.set(b"BaseFont".to_vec(), Object::name(base));
+    font.set(b"FontDescriptor".to_vec(), Object::Dict(descriptor));
+    Object::Dict(font)
+}
+
+/// The bundled Sarabun faces, which these tests shape with; `None` without craft-fonts.
+fn thai_probe_faces() -> Option<(&'static pdfcraft_fonts::CraftFont, &'static pdfcraft_fonts::CraftFont)> {
+    let regular = pdfcraft_fonts::CRAFT_FONTS.iter().find(|f| f.family == "Sarabun" && f.style == "Regular")?;
+    let bold = pdfcraft_fonts::CRAFT_FONTS.iter().find(|f| f.family == "Sarabun" && f.style == "Bold")?;
+    Some((regular, bold))
+}
+
+#[test]
+fn a_shaped_edit_skips_subsets_and_keeps_the_source_weight() {
+    let Some((regular, bold)) = thai_probe_faces() else {
+        eprintln!("skipping the shaped-face checks: built without craft-fonts (set CRAFT_FONTS_DIR)");
+        return;
+    };
+    // The page's own resource is a subset by name, but its program is the bold face. A subset's
+    // mapping may keep characters whose outlines were dropped, so it must never shape. The bold
+    // sibling is listed first: the regular run must still choose the regular full face.
+    let mut doc = Document::new_empty();
+    let mut fonts = Dict::new();
+    fonts.set(b"F1".to_vec(), probe_font(&mut doc, "ABCDEF+PCThaiProbe-Regular", bold.bytes, false));
+    fonts.set(b"F2".to_vec(), probe_font(&mut doc, "PCThaiProbe-Bold", bold.bytes, true));
+    fonts.set(b"F3".to_vec(), probe_font(&mut doc, "PCThaiProbe", regular.bytes, false));
+    let (bytes, _, name) = super::text::shape_source(&doc, &fonts, "F1", "ไทย").unwrap().expect("a complete face");
+    assert_eq!(name, "Sarabun-Regular", "named from the program, not the subset prefix");
+    assert_eq!(bytes, regular.bytes, "the source's regular weight, not the bold sibling");
+
+    // Only a subset: the family has no complete face, so the caller is told instead of drawing it.
+    let mut only_subset = Dict::new();
+    only_subset.set(b"F1".to_vec(), probe_font(&mut doc, "ABCDEF+PCThaiProbe-Regular", bold.bytes, false));
+    let error = super::text::shape_source(&doc, &only_subset, "F1", "ไทย").unwrap_err().to_string();
+    assert!(error.contains("PCThaiProbe-Regular") && error.contains("Load font"), "{error}");
+}
+
+#[test]
+fn a_shaped_edit_uses_the_bundled_face_of_the_same_family_in_the_source_weight() {
+    let Some((regular, bold)) = thai_probe_faces() else {
+        eprintln!("skipping the shaped-face checks: built without craft-fonts (set CRAFT_FONTS_DIR)");
+        return;
+    };
+    // The subset names the regular family but embeds the bold program: the bundled regular face
+    // must stand in, not the subset's program and not the bold face.
+    let mut doc = Document::new_empty();
+    let mut fonts = Dict::new();
+    fonts.set(b"F1".to_vec(), probe_font(&mut doc, "ABCDEF+Sarabun-Regular", bold.bytes, false));
+    let (bytes, _, name) = super::text::shape_source(&doc, &fonts, "F1", "ไทย").unwrap().expect("the bundled face");
+    assert_eq!(name, "Sarabun-Regular");
+    assert_eq!(bytes, regular.bytes);
+}
+
 #[test]
 fn draft_layout_matches_the_paragraph_an_applied_edit_draws() {
     let content = "BT /F1 12 Tf 14 TL 72 700 Td (A first paragraph of words) Tj T* (with a second row) Tj ET \

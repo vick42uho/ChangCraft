@@ -22,6 +22,8 @@ use crate::EditError;
 
 #[path = "text_regions.rs"]
 mod regions;
+#[cfg(test)]
+pub(crate) use regions::shape_source;
 #[path = "text_session.rs"]
 mod session;
 use regions::{group_blocks, is_centred, rewrite_styled_block};
@@ -2238,7 +2240,8 @@ fn family_program(family: &str, bold: bool, italic: bool, text: &str) -> Option<
         .into_iter()
         .find(|f| f.covers("Thai") && pdfcraft_fonts::embedding::covers(f.bytes, text))
     {
-        return Some((face.bytes.to_vec(), face.family.to_string()));
+        let name = pdfcraft_fonts::embedding::names(face.bytes).map_or_else(|_| face.name(), |(_, name)| name);
+        return Some((face.bytes.to_vec(), name));
     }
     // The same family installed on this computer, which is where a Thai document's own face
     // usually lives (TH SarabunPSK, Angsana New, Tahoma). Never bundled, never committed.

@@ -78,11 +78,31 @@ pub fn family_key(name: &str) -> String {
     raw
 }
 
+/// The family key of a name from which an older PdfCraft build dropped the subset tag's `+`
+/// (`AAAAAASarabun-Regular` for `AAAAAA+Sarabun-Regular`). Only a six-letter uppercase tag
+/// directly followed by the family is removed, and only when enough of the family remains: a
+/// PostScript name such as `ARIALMT` must not become the family `T`.
+fn legacy_subset_family_key(name: &str) -> Option<String> {
+    if name.contains('+') {
+        return None;
+    }
+    let bytes = name.as_bytes();
+    let tag_is_upper = bytes.get(..6).is_some_and(|tag| tag.iter().all(u8::is_ascii_uppercase));
+    if !tag_is_upper || !bytes.get(6).is_some_and(u8::is_ascii_uppercase) {
+        return None;
+    }
+    let key = family_key(name.get(6..)?);
+    (key.len() >= 3).then_some(key)
+}
+
 /// Whether two PDF font names belong to the same family, ignoring only the subset tag and the
 /// style suffix. `THSarabunPSK` and `Sarabun` are different families.
 pub fn same_family(a: &str, b: &str) -> bool {
-    let (a, b) = (family_key(a), family_key(b));
-    !a.is_empty() && a == b
+    let (a_key, b_key) = (family_key(a), family_key(b));
+    if a_key.is_empty() || b_key.is_empty() {
+        return false;
+    }
+    a_key == b_key || legacy_subset_family_key(a).is_some_and(|key| key == b_key) || legacy_subset_family_key(b).is_some_and(|key| key == a_key)
 }
 
 /// Load the matching Thai TrueType font program from Windows system fonts if available
@@ -896,6 +916,12 @@ mod tests {
         assert!(!same_family("THSarabunPSK", "Sarabun"));
         assert!(same_family("ABCDEF+THSarabunPSK-Bold", "THSarabunPSK"));
         assert!(same_family("BAAAAA+AngsanaNew-BoldItalic", "AngsanaNew"));
+        // An older producer glued the subset tag to the name without its `+`; the tag is
+        // still not part of the family. `ARIALMT` is a PostScript name, not a tagged family.
+        assert!(same_family("AAAAAASarabun-Regular", "Sarabun"));
+        assert!(same_family("ABCDEESarabun-Regular", "AAAAAA+Sarabun-Bold"));
+        assert!(same_family("BCDEEEAngsanaNew", "AngsanaNew-Bold"));
+        assert!(!same_family("ARIALMT", "ARIAL"));
         assert_eq!(matching_faces_exact("THSarabunPSK").len(), 0);
 
         // Installed files are matched by name, but THSarabunPSK ships as `THSarabun.ttf`.
