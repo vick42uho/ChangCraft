@@ -104,6 +104,20 @@ All contributors and AI agents working on this codebase **must** adhere strictly
   - `crates/engine/src/print_raster.rs`: renders at `scale = (dpi / 72.0) as f32` clamped between 72 and 600 DPI.
   - Resolves at exactly 150, 300, or 600 DPI on standard paper sizes.
 
+### 4.3 Multi-Signature Slots (Fill & Sign)
+- **Capacity**: Expands saved signatures up to 5 slots (Slot 0: Primary signature, Slot 1: Initials, Slots 2–4: Extra signatures/stamps), matching PDFelement workflows.
+- **Graphic Modes**: Each slot accepts Drawn (mouse/pen vector strokes), Typed (script typography), or Image/Scan (transparent PNG, JPG photo, or official stamp seal).
+- **Persistence**: Persisted in application settings under `"signature"`, `"initials"`, and `"extra_signatures"`, with 5 individual texture preview caches.
+- **Active Selection**: Clicking any signature card activates it immediately for placement on pages with real-time hover preview.
+
+### 4.4 Object Editing & Delete Key
+- **Delete / Backspace in Edit Mode**: Selected content objects (text blocks, page images, and added content) are deleted with Delete or Backspace key as a single atomic undo batch (`Edit::Batch` labeled "Delete content").
+- **Inventory Ordering**: Target deletions order from last index to first within each inventory type (Text -> Image -> Added) to prevent renumbering invalidations.
+
+### 4.5 Ortho Line & Arrow Snapping (Shift Key)
+- **CAD Ortho Snapping**: Holding `Shift` while drawing new lines or arrows constrains them to exact level (horizontal 0°) or plumb (vertical 90°) orientation (`measure::snap::ortho`).
+- **Reshaping**: Dragging endpoints or corners of lines, polylines, and polygons with `Shift` snaps to nearest ortho orientation.
+
 ---
 
 ## 5. Build, Test & Packaging Workflows

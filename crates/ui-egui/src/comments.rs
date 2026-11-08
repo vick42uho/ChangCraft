@@ -740,13 +740,13 @@ fn point_handle(cx: &PageCx<'_>, a: &Annotation, p: Pos2) -> Option<usize> {
     a.points.iter().position(|q| cx.to_screen([f64::from(q[0]), f64::from(q[1])]).distance(p) <= 7.0)
 }
 
-/// `points` with point `i` moved to `to`; with Shift, held to the nearest 45° from the point
-/// before it (a line's other end; the first corner turns about the second).
+/// `points` with point `i` moved to `to`; with Shift, held level or plumb from the point
+/// before it (ortho mode: a line's other end; the first corner turns about the second).
 pub(crate) fn reshaped(points: &[[f64; 2]], i: usize, to: [f64; 2], shift: bool) -> Vec<[f64; 2]> {
     let mut out = points.to_vec();
     let anchor = if i == 0 { points.get(1) } else { points.get(i - 1) };
     let to = match anchor {
-        Some(a) if shift => pdfcraft_engine::measure::snap::constrain(*a, to),
+        Some(a) if shift => pdfcraft_engine::measure::snap::ortho(*a, to),
         _ => to,
     };
     if let Some(p) = out.get_mut(i) {
@@ -859,6 +859,11 @@ pub(crate) fn page_input(ui: &egui::Ui, resp: &egui::Response, cx: &PageCx<'_>, 
                     }
                 } else {
                     points.truncate(1);
+                    let u = if ui.input(|i| i.modifiers.shift) && matches!(*tool, CommentTool::Line | CommentTool::Arrow) {
+                        pdfcraft_engine::measure::snap::ortho(points[0], u)
+                    } else {
+                        u
+                    };
                     points.push(u);
                 }
             }
@@ -929,6 +934,11 @@ pub(crate) fn page_input(ui: &egui::Ui, resp: &egui::Response, cx: &PageCx<'_>, 
                             return true;
                         }
                         if !repeat {
+                            let u = if ui.input(|i| i.modifiers.shift) && let Some(last) = points.last() {
+                                pdfcraft_engine::measure::snap::ortho(*last, u)
+                            } else {
+                                u
+                            };
                             points.push(u);
                         }
                     }
@@ -2405,5 +2415,19 @@ mod tests {
         let long = text_box_rect([0.0, 500.0], &"word ".repeat(80), 12.0, 0);
         assert_eq!(long[2], 300.0);
         assert!(long[3] - long[1] > 50.0);
+    }
+
+    #[test]
+    fn reshaped_with_shift_holds_ortho_level_or_plumb() {
+        let pts = [[10.0, 20.0], [50.0, 60.0]];
+        // Moving second point with shift near level -> holds y to 20.0
+        let r1 = reshaped(&pts, 1, [60.0, 23.0], true);
+        assert_eq!(r1, vec![[10.0, 20.0], [60.0, 20.0]]);
+        // Moving second point with shift near plumb -> holds x to 10.0
+        let r2 = reshaped(&pts, 1, [12.0, 80.0], true);
+        assert_eq!(r2, vec![[10.0, 20.0], [10.0, 80.0]]);
+        // Moving second point without shift -> free placement
+        let r3 = reshaped(&pts, 1, [60.0, 23.0], false);
+        assert_eq!(r3, vec![[10.0, 20.0], [60.0, 23.0]]);
     }
 }

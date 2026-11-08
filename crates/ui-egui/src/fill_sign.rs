@@ -537,45 +537,67 @@ pub(crate) fn script_preview(text: &str, w: usize, h: usize) -> egui::ColorImage
 pub(crate) fn signature_entries(ui: &mut egui::Ui, app: &mut crate::PdfCraftApp, t: &Tokens) -> Option<&'static str> {
     ui.set_width(ui.available_width().clamp(240.0, 248.0));
     let mut command = None;
-    for (i, (saved, what, use_id, change_id, remove_id)) in [
-        (app.signature.as_ref(), "signature", "sign.fill.signature", "sign.fill.signature.change", "sign.fill.signature.remove"),
-        (app.initials.as_ref(), "initials", "sign.fill.initials", "sign.fill.initials.change", "sign.fill.initials.remove"),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+
+    let slots: [(&'static str, usize, &'static str, &'static str, &'static str); 5] = [
+        ("signature", 0, "sign.fill.signature", "sign.fill.signature.change", "sign.fill.signature.remove"),
+        ("initials", 1, "sign.fill.initials", "sign.fill.initials.change", "sign.fill.initials.remove"),
+        ("signature", 2, "sign.fill.extra.0", "sign.fill.extra.0.change", "sign.fill.extra.0.remove"),
+        ("signature", 3, "sign.fill.extra.1", "sign.fill.extra.1.change", "sign.fill.extra.1.remove"),
+        ("signature", 4, "sign.fill.extra.2", "sign.fill.extra.2.change", "sign.fill.extra.2.remove"),
+    ];
+
+    let mut first_empty_extra = None;
+
+    for (what, slot, use_id, change_id, remove_id) in slots {
+        let saved = app.get_saved_signature(slot).cloned();
         let label = |template: &str| crate::i18n::fmt(tl!(template), &[("what", tl!(what))]);
-        let Some(saved) = saved else {
+        if let Some(saved) = saved {
+            let is_active = app.active_signature_slot == slot
+                && app.quick_tool == crate::QuickTool::Fill(if slot == 1 { crate::fill_sign::FillTool::Initials } else { crate::fill_sign::FillTool::Signature });
+            ui.horizontal(|ui| {
+                let (rect, response) = ui.allocate_exact_size(vec2((ui.available_width() - 68.0).max(140.0), 52.0), Sense::click());
+                let use_label = label("Use {what}");
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, use_label.clone()));
+                let painter = ui.painter_at(rect);
+                painter.rect_filled(rect, CornerRadius::same(4), Color32::WHITE);
+                let stroke = if is_active {
+                    Stroke::new(2.0, t.accent)
+                } else if response.hovered() {
+                    Stroke::new(1.0, t.accent)
+                } else {
+                    Stroke::new(1.0, t.border)
+                };
+                painter.rect_stroke(rect, CornerRadius::same(4), stroke, egui::StrokeKind::Inside);
+                paint_saved(ui, rect.shrink(8.0), &saved, &mut app.saved_signature_previews[slot], &format!("saved-{what}-{slot}"));
+                if response.on_hover_text(label("Place saved {what}")).clicked() {
+                    command = Some(use_id);
+                }
+                if crate::icons::button(ui, "pencil", 26.0, false, &label("Change {what}")).clicked() {
+                    command = Some(change_id);
+                }
+                if crate::icons::button(ui, "x", 26.0, false, &label("Remove saved {what}")).clicked() {
+                    command = Some(remove_id);
+                }
+            });
+            ui.add_space(4.0);
+        } else if slot == 0 || slot == 1 {
             if crate::widgets::ghost_button(ui, "plus", &label("Add {what}")).clicked() {
                 command = Some(use_id);
             }
-            continue;
-        };
-        ui.horizontal(|ui| {
-            let (rect, response) = ui.allocate_exact_size(vec2((ui.available_width() - 68.0).max(140.0), 52.0), Sense::click());
-            let use_label = label("Use {what}");
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, use_label.clone()));
-            let painter = ui.painter_at(rect);
-            painter.rect_filled(rect, CornerRadius::same(4), Color32::WHITE);
-            painter.rect_stroke(
-                rect,
-                CornerRadius::same(4),
-                Stroke::new(1.0, if response.hovered() { t.accent } else { t.border }),
-                egui::StrokeKind::Inside,
-            );
-            paint_saved(ui, rect.shrink(8.0), saved, &mut app.saved_signature_previews[i], &format!("saved-{what}"));
-            if response.on_hover_text(label("Place saved {what}")).clicked() {
-                command = Some(use_id);
-            }
-            if crate::icons::button(ui, "pencil", 26.0, false, &label("Change {what}")).clicked() {
+        } else if first_empty_extra.is_none() {
+            first_empty_extra = Some((what, change_id));
+        }
+    }
+
+    if let Some((_what, change_id)) = first_empty_extra {
+        if app.signature.is_some() || app.initials.is_some() {
+            let label = crate::i18n::fmt(tl!("Add {what}"), &[("what", tl!("signature"))]);
+            if crate::widgets::ghost_button(ui, "plus", &label).clicked() {
                 command = Some(change_id);
             }
-            if crate::icons::button(ui, "x", 26.0, false, &label("Remove saved {what}")).clicked() {
-                command = Some(remove_id);
-            }
-        });
-        ui.add_space(4.0);
+        }
     }
+
     command
 }
 
@@ -1314,5 +1336,36 @@ mod tests {
         assert_eq!(runs(&omicron, 94), 2);
         assert!(super::script_preview("", 200, 200).pixels.iter().all(|p| p.a() == 0));
         assert!(super::script_preview("Ђћ", 0, 0).pixels.is_empty());
+    }
+
+    #[test]
+    fn multi_signature_slots_store_and_activate_up_to_five_signatures() {
+        let mut app = crate::PdfCraftApp::new();
+        assert_eq!(app.active_signature(), None);
+
+        // Slot 0 (signature)
+        app.set_saved_signature(0, Some(super::SavedSig::Typed("Sign 1".into())));
+        assert_eq!(app.get_saved_signature(0), Some(&super::SavedSig::Typed("Sign 1".into())));
+
+        // Slot 1 (initials)
+        app.set_saved_signature(1, Some(super::SavedSig::Typed("S2".into())));
+        assert_eq!(app.get_saved_signature(1), Some(&super::SavedSig::Typed("S2".into())));
+
+        // Slot 2, 3, 4 (extra signatures)
+        app.set_saved_signature(2, Some(super::SavedSig::Typed("Sign 3".into())));
+        app.set_saved_signature(3, Some(super::SavedSig::Typed("Sign 4".into())));
+        app.set_saved_signature(4, Some(super::SavedSig::Typed("Sign 5".into())));
+
+        assert_eq!(app.get_saved_signature(2), Some(&super::SavedSig::Typed("Sign 3".into())));
+        assert_eq!(app.get_saved_signature(3), Some(&super::SavedSig::Typed("Sign 4".into())));
+        assert_eq!(app.get_saved_signature(4), Some(&super::SavedSig::Typed("Sign 5".into())));
+
+        // Active slot switching
+        app.active_signature_slot = 3;
+        assert_eq!(app.active_signature(), Some(&super::SavedSig::Typed("Sign 4".into())));
+
+        // Clearing a slot
+        app.set_saved_signature(3, None);
+        assert_eq!(app.get_saved_signature(3), None);
     }
 }

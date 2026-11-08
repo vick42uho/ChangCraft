@@ -803,15 +803,18 @@ pub struct PdfCraftApp {
     pub export_draft: export_ui::ExportDraft,
     /// A running export's progress.
     export_status: Option<export_ui::ExportStatus>,
-    /// The saved Fill & Sign signature and initials (drawn or typed).
+    /// The saved Fill & Sign signature and initials (drawn or typed), plus extra signature slots (up to 5 total).
     pub signature: Option<fill_sign::SavedSig>,
     pub initials: Option<fill_sign::SavedSig>,
+    pub extra_signatures: [Option<fill_sign::SavedSig>; 3],
+    pub active_signature_slot: usize,
+    pub signature_slot_editing: usize,
     /// The Create signature / initials dialog, and its typed preview.
     pub signature_draft: fill_sign::SigDraft,
     pub(crate) signature_preview: Option<(fill_sign::SavedSig, egui::TextureHandle)>,
     /// The Scan tab's photo, keyed by its version.
     pub(crate) signature_photo: Option<(u64, egui::TextureHandle)>,
-    pub(crate) saved_signature_previews: [Option<(fill_sign::SavedSig, egui::TextureHandle)>; 2],
+    pub(crate) saved_signature_previews: [Option<(fill_sign::SavedSig, egui::TextureHandle)>; 5],
     /// What visible digital signatures show on their left, and its preview in Sign as.
     pub sign_graphic: sign_ui::SignGraphic,
     pub(crate) sign_graphic_preview: Option<(fill_sign::SavedSig, egui::TextureHandle)>,
@@ -1114,10 +1117,13 @@ impl PdfCraftApp {
             export_status: None,
             signature: None,
             initials: None,
+            extra_signatures: [None, None, None],
+            active_signature_slot: 0,
+            signature_slot_editing: 0,
             signature_draft: Default::default(),
             signature_preview: None,
             signature_photo: None,
-            saved_signature_previews: [None, None],
+            saved_signature_previews: [None, None, None, None, None],
             sign_graphic: sign_ui::SignGraphic::Name,
             sign_graphic_preview: None,
             #[cfg(target_arch = "wasm32")]
@@ -1146,6 +1152,35 @@ impl PdfCraftApp {
         ((self.left_open && matches!(self.left, LeftPanel::Tool("form") | LeftPanel::CalculationOrder))
             || matches!(self.quick_tool, QuickTool::Field(_)))
             && !self.form_preview
+    }
+
+    /// Return the saved signature at `slot` (0 = primary, 1 = initials, 2..4 = extra signatures).
+    pub fn get_saved_signature(&self, slot: usize) -> Option<&fill_sign::SavedSig> {
+        match slot {
+            0 => self.signature.as_ref(),
+            1 => self.initials.as_ref(),
+            2 => self.extra_signatures.first().and_then(|s| s.as_ref()),
+            3 => self.extra_signatures.get(1).and_then(|s| s.as_ref()),
+            4 => self.extra_signatures.get(2).and_then(|s| s.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// Set or clear the saved signature at `slot` (0 = primary, 1 = initials, 2..4 = extra signatures).
+    pub fn set_saved_signature(&mut self, slot: usize, sig: Option<fill_sign::SavedSig>) {
+        match slot {
+            0 => self.signature = sig,
+            1 => self.initials = sig,
+            2 => self.extra_signatures[0] = sig,
+            3 => self.extra_signatures[1] = sig,
+            4 => self.extra_signatures[2] = sig,
+            _ => {}
+        }
+    }
+
+    /// The currently active signature for placement.
+    pub fn active_signature(&self) -> Option<&fill_sign::SavedSig> {
+        self.get_saved_signature(self.active_signature_slot)
     }
 
     /// Open a document the way it asks to be opened: navigation panel, layout, magnification,
@@ -2413,6 +2448,7 @@ impl PdfCraftApp {
             "signature_text": match &self.signature { Some(fill_sign::SavedSig::Typed(t)) => Some(t), _ => None },
             "signature_image": match &self.signature { Some(s @ fill_sign::SavedSig::Image(_)) => Some(s), _ => None },
             "initials": self.initials,
+            "extra_signatures": self.extra_signatures,
             "sign_graphic": self.sign_graphic,
             // macOS Keychain and Windows store identities are read from their OS key stores each time.
             "digital_ids": self.digital_ids.iter().filter(|e| !e.path.starts_with("keychain:") && !e.path.starts_with("windows:")).collect::<Vec<_>>(),
@@ -2596,6 +2632,9 @@ impl PdfCraftApp {
         }
         if let Ok(i) = serde_json::from_value::<fill_sign::SavedSig>(v["initials"].clone()) {
             self.initials = Some(i);
+        }
+        if let Ok(extras) = serde_json::from_value::<[Option<fill_sign::SavedSig>; 3]>(v["extra_signatures"].clone()) {
+            self.extra_signatures = extras;
         }
         // An unreadable choice (a damaged image) falls back to the name.
         self.sign_graphic = serde_json::from_value(v["sign_graphic"].clone()).unwrap_or_default();
@@ -3028,6 +3067,7 @@ impl PdfCraftApp {
                 && let Some(doc) = self.session.get(self.views[i].id).filter(|d| d.allows_modification())
             {
                 object_ui::nudge_keys(ctx, &mut self.views[i], doc);
+                object_ui::delete_keys(ctx, &mut self.views[i]);
             }
             // A selected field moves with the arrows too (Prepare a form, #2608), before the view
             // turns the page with them.

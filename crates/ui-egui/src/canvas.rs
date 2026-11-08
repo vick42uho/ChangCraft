@@ -3111,7 +3111,14 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     let can_fill = doc.allows_form_filling();
     let can_crop = doc.allows_assembly();
     let mut open_boxes = false;
-    let signature = app.signature.clone();
+    let signature = match app.active_signature_slot {
+        1 => app.initials.clone(),
+        2 => app.extra_signatures[0].clone(),
+        3 => app.extra_signatures[1].clone(),
+        4 => app.extra_signatures[2].clone(),
+        _ => app.signature.clone(),
+    }
+    .or_else(|| app.signature.clone());
     let initials = app.initials.clone();
     let mut open_initials = false;
     let author = app.comment_prefs.author.clone();

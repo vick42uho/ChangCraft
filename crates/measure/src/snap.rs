@@ -189,6 +189,13 @@ pub fn constrain(last: Point, point: Point) -> Point {
     let angle = (v[1].atan2(v[0]) / std::f64::consts::FRAC_PI_4).round() * std::f64::consts::FRAC_PI_4;
     [last[0] + length * angle.cos(), last[1] + length * angle.sin()]
 }
+
+/// Hold `now` level or plumb with `from`, whichever is nearer.
+pub fn ortho(from: Point, now: Point) -> Point {
+    let dx = (now[0] - from[0]).abs();
+    let dy = (now[1] - from[1]).abs();
+    if dx >= dy { [now[0], from[1]] } else { [from[0], now[1]] }
+}
 struct Walker<'a> {
     doc: &'a Document,
     geometry: Geometry,

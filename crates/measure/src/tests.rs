@@ -403,3 +403,10 @@ fn a_scale_ratio_converts_its_page_side_to_points() {
         assert!(Scale::ratio([0.0, 0.0], [1.0, 0.0], page, PageUnit::Mm, real, "mm", 2).is_err(), "{page} {real}");
     }
 }
+
+#[test]
+fn ortho_holds_a_vertex_level_or_plumb_with_the_last() {
+    assert_eq!(snap::ortho([10.0, 20.0], [30.0, 25.0]), [30.0, 20.0], "nearer to level");
+    assert_eq!(snap::ortho([10.0, 20.0], [15.0, 50.0]), [10.0, 50.0], "nearer to plumb");
+    assert_eq!(snap::ortho([10.0, 20.0], [20.0, 30.0]), [20.0, 20.0], "exact diagonal defaults to level");
+}

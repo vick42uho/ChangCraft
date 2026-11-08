@@ -923,11 +923,13 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
                 }
                 if apply {
                     let d = std::mem::take(&mut app.signature_draft);
-                    let tool = if d.initials {
-                        app.initials = d.saved();
+                    let slot = app.signature_slot_editing;
+                    let saved = d.saved();
+                    app.set_saved_signature(slot, saved);
+                    app.active_signature_slot = slot;
+                    let tool = if slot == 1 {
                         crate::fill_sign::FillTool::Initials
                     } else {
-                        app.signature = d.saved();
                         crate::fill_sign::FillTool::Signature
                     };
                     app.quick_tool = crate::QuickTool::Fill(tool);
