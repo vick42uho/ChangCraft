@@ -2239,6 +2239,9 @@ impl PdfCraftApp {
             self.execute(command);
             return;
         }
+        if self.execute(command) {
+            return;
+        }
         // Not implemented yet: say which milestone ships it.
         let when = pdfcraft_engine::catalog::TOOL_GROUPS
             .iter()
