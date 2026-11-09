@@ -155,7 +155,7 @@ pub mod window_state;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod open_worker_tests;
 
-use pdfcraft_engine::{DocId, Session};
+use pdfcraft_engine::{DocId, Edit, LineEnding, NewAnnotation, Session, Shape, Style};
 
 pub use canvas::{DocView, RasterMemory};
 pub use editing::{CloseRequest, SaveTarget};
@@ -737,6 +737,8 @@ pub struct PdfCraftApp {
     pub progress_notice: Option<widgets::ProgressNotice>,
     /// Pages copied or cut in Organize Pages, ready to paste (into any document).
     pub page_clipboard: Option<PageClip>,
+    /// Annotation / text box copied to clipboard, ready to paste on any page.
+    pub annot_clipboard: Option<NewAnnotation>,
     /// Files dropped on the page grid, waiting for the pointer to say which gap they go to.
     grid_drop: Option<GridDrop>,
     /// The last snapshot (width, height, RGBA); `system_clipboard` also puts it on the
@@ -1078,6 +1080,7 @@ impl PdfCraftApp {
             optimize_run: None,
             progress_notice: None,
             page_clipboard: None,
+            annot_clipboard: None,
             grid_drop: None,
             last_snapshot: None,
             last_copied_image: None,
@@ -3109,14 +3112,93 @@ impl PdfCraftApp {
         false
     }
 
-    /// ⌘C copies the selected text, unless a text field has the keyboard (it copies its own).
+    /// ⌘C copies the selected text or selected annotation/textbox, unless a text field has the keyboard (it copies its own).
     fn copy_key(&mut self, i: usize, ctx: &egui::Context) {
         // ⌘C arrives as a Copy event on most platforms.
         let copy = ctx.input(|input| input.events.iter().any(|e| matches!(e, egui::Event::Copy)));
         if !copy || ctx.egui_wants_keyboard_input() {
             return;
         }
+        if let Some((page, annot_idx)) = self.views.get(i).and_then(|v| v.comments.selected) {
+            self.copy_annotation(page, annot_idx);
+            return;
+        }
         self.copy_selected_text(i, ctx);
+    }
+
+    pub(crate) fn copy_annotation(&mut self, page: usize, index: usize) {
+        let Some(active) = self.active else { return };
+        let Some(doc) = self.session.get(self.views[active].id) else { return };
+        let Some(a) = doc.info.annotations.iter().find(|a| a.page == page && a.index == index) else { return };
+        let shape = match a.subtype.as_str() {
+            "FreeText" => {
+                let h = (a.rect[3] - a.rect[1]).abs() as f64;
+                let font_size = if h > 30.0 { 12.0 } else { (h * 0.7).clamp(8.0, 24.0) };
+                Shape::TextBox {
+                    rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64],
+                    font_size,
+                }
+            }
+            "Square" => Shape::Rectangle {
+                rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64],
+            },
+            "Circle" => Shape::Oval {
+                rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64],
+            },
+            "Line" if a.points.len() >= 2 => Shape::Line {
+                from: [a.points[0][0] as f64, a.points[0][1] as f64],
+                to: [a.points[1][0] as f64, a.points[1][1] as f64],
+                start: LineEnding::None,
+                end: LineEnding::None,
+            },
+            _ => Shape::TextBox {
+                rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64],
+                font_size: 12.0,
+            },
+        };
+        let style = Style {
+            color: a.color.map(|c| [c[0] as f64, c[1] as f64, c[2] as f64]).unwrap_or([0.0, 0.0, 0.0]),
+            width: 1.0,
+            opacity: 1.0,
+            fill: None,
+        };
+        self.annot_clipboard = Some(NewAnnotation {
+            page,
+            shape,
+            style,
+            contents: a.contents.clone().unwrap_or_default(),
+            author: a.author.clone().unwrap_or_default(),
+        });
+        if let Some(ctx) = &self.ctx {
+            if let Some(c) = &a.contents {
+                ctx.copy_text(c.clone());
+            }
+        }
+    }
+
+    pub(crate) fn paste_annotation(&mut self, target_page: usize) {
+        let Some(clip) = self.annot_clipboard.clone() else { return };
+        let mut pasted = clip;
+        pasted.page = target_page;
+        match &mut pasted.shape {
+            Shape::TextBox { rect, .. }
+            | Shape::Rectangle { rect }
+            | Shape::Oval { rect } => {
+                rect[0] += 20.0;
+                rect[1] -= 20.0;
+                rect[2] += 20.0;
+                rect[3] -= 20.0;
+            }
+            Shape::Line { from, to, .. } => {
+                from[0] += 20.0;
+                from[1] -= 20.0;
+                to[0] += 20.0;
+                to[1] -= 20.0;
+            }
+            _ => {}
+        }
+        self.annot_clipboard = Some(pasted.clone());
+        self.apply_edit(Edit::AddAnnotation(pasted));
     }
 
     /// Shared permission gate for copying selected page text from menus and keyboard events.

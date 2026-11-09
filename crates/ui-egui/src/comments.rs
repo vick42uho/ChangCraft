@@ -1903,6 +1903,10 @@ pub(crate) fn context_menu(ui: &mut egui::Ui, view: &mut DocView, info: &DocInfo
                 action = Some(CanvasAction::Edit(Box::new(Edit::MarkAnnotation { page, index, marked: !marked, author: prefs.author.clone() })));
                 ui.close();
             }
+            if ui.button(tl!("Copy")).clicked() {
+                action = Some(CanvasAction::CopyAnnotation(page, index));
+                ui.close();
+            }
             if ui.button(tl!("Copy text")).clicked() {
                 ui.ctx().copy_text(a.contents.clone().unwrap_or_default());
                 ui.close();
@@ -1923,11 +1927,15 @@ pub(crate) fn context_menu(ui: &mut egui::Ui, view: &mut DocView, info: &DocInfo
             }
         }
         None => {
-            if let Some((page, at)) = view.comments.context_at
-                && ui.add_enabled(allowed, egui::Button::new(tl!("Add a sticky note here"))).clicked()
-            {
-                view.comments.composer = Some(Composer { page, at, kind: ComposerKind::Note, text: String::new(), focus: true });
-                ui.close();
+            if let Some((page, at)) = view.comments.context_at {
+                if ui.button(tl!("Paste")).clicked() {
+                    action = Some(CanvasAction::PasteAnnotation(page));
+                    ui.close();
+                }
+                if ui.add_enabled(allowed, egui::Button::new(tl!("Add a sticky note here"))).clicked() {
+                    view.comments.composer = Some(Composer { page, at, kind: ComposerKind::Note, text: String::new(), focus: true });
+                    ui.close();
+                }
             }
             if ui.button(tl!("Comments panel")).clicked() {
                 action = Some(CanvasAction::OpenComments);
@@ -1949,6 +1957,8 @@ pub enum CanvasAction {
     CopyImage(usize, usize),
     /// Copy Image in Original Format: the same image as a file (JPEG as stored, else PNG).
     CopyImageFile(usize, usize),
+    CopyAnnotation(usize, usize),
+    PasteAnnotation(usize),
 }
 
 /// How many custom colours the "Recent colours" row keeps.

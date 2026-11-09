@@ -604,6 +604,46 @@ pub fn from_images_with_resolution(images: &[(String, Vec<u8>)], resolution: Ima
     Ok(doc)
 }
 
+/// One horizontal slice of a page image (for high-DPI print rasterization without exceeding Windows GDI limits).
+#[derive(Clone, Debug)]
+pub struct TiledSlice {
+    pub name: String,
+    pub bytes: Vec<u8>,
+    pub y_pt: f64,
+    pub h_pt: f64,
+}
+
+/// A page composed of one or more tiled image slices.
+#[derive(Clone, Debug)]
+pub struct TiledPage {
+    pub width: f64,
+    pub height: f64,
+    pub slices: Vec<TiledSlice>,
+}
+
+/// Create a PDF where each page consists of one or more image slices (tiled edge-to-edge).
+pub fn from_tiled_pages(pages: &[TiledPage]) -> Result<Document, CreateError> {
+    if pages.is_empty() {
+        return Err(CreateError::Invalid("no pages".into()));
+    }
+    let mut doc = Document::new_empty();
+    for p in pages {
+        let mut xobj = Dict::new();
+        let mut content = Vec::new();
+        for (i, slice) in p.slices.iter().enumerate() {
+            let (xr, _) = image_xobject(&mut doc, &slice.name, &slice.bytes)?;
+            let key = format!("Im{i}").into_bytes();
+            xobj.set(key.clone(), Object::Ref(xr));
+            let op = format!("q {:.3} 0 0 {:.3} 0 {:.3} cm /{} Do Q\n", p.width, slice.h_pt, slice.y_pt, String::from_utf8_lossy(&key));
+            content.extend_from_slice(op.as_bytes());
+        }
+        let mut res = Dict::new();
+        res.set(b"XObject".to_vec(), Object::Dict(xobj));
+        add_page(&mut doc, p.width, p.height, res, Some(content))?;
+    }
+    Ok(doc)
+}
+
 // ── text ────────────────────────────────────────────────────────────────────────────────────
 
 /// The text of a plain-text file. A byte order mark picks UTF-8 or UTF-16 (little or big

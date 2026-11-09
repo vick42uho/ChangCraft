@@ -3129,6 +3129,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     let by_line = app.session.stamp_by_line(&author);
     let mut stamp_placed = false;
     let mut image_action: Option<crate::edit_text_ui::ImageAction> = None;
+    let mut annot_action: Option<comments::CanvasAction> = None;
     let custom_stamp = match app.quick_tool {
         QuickTool::CustomStamp(i) => app.custom_stamps.get(i).cloned(),
         _ => None,
@@ -4342,6 +4343,9 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         Some(comments::CanvasAction::Properties(p, i)) => open_props = Some((p, i)),
         Some(comments::CanvasAction::CopyImage(p, i)) => image_action = Some(crate::edit_text_ui::ImageAction::Copy(p, i)),
         Some(comments::CanvasAction::CopyImageFile(p, i)) => image_action = Some(crate::edit_text_ui::ImageAction::CopyFile(p, i)),
+        Some(a @ (comments::CanvasAction::CopyAnnotation(_, _) | comments::CanvasAction::PasteAnnotation(_))) => {
+            annot_action = Some(a);
+        }
         None => {}
     }
     // Full screen: the click turns the page unless it did something else first. It waits out the
@@ -4456,6 +4460,11 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         Some(crate::edit_text_ui::ImageAction::Link(page, index)) => app.link_page_image(page, index),
         Some(crate::edit_text_ui::ImageAction::Recognize(page)) => app.recognize_text_on_page(page),
         None => {}
+    }
+    match annot_action {
+        Some(comments::CanvasAction::CopyAnnotation(p, i)) => app.copy_annotation(p, i),
+        Some(comments::CanvasAction::PasteAnnotation(target_page)) => app.paste_annotation(target_page),
+        _ => {}
     }
     if let Some(why) = refused {
         app.notify_error(why);

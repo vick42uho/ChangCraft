@@ -1181,3 +1181,23 @@ fn a_jpeg_with_an_exif_orientation_becomes_an_upright_page() {
     let img = image_of(&doc, 1);
     assert_eq!((img.int(b"Width"), img.int(b"Height")), (Some(60), Some(20)));
 }
+
+#[test]
+fn tiled_pages_with_multiple_slices_form_a_continuous_page() {
+    use crate::{TiledPage, TiledSlice, from_tiled_pages};
+    let slice1 = png_bytes(false);
+    let slice2 = png_bytes(false);
+    let page = TiledPage {
+        width: 100.0,
+        height: 200.0,
+        slices: vec![
+            TiledSlice { name: "slice1.png".into(), bytes: slice1, y_pt: 100.0, h_pt: 100.0 },
+            TiledSlice { name: "slice2.png".into(), bytes: slice2, y_pt: 0.0, h_pt: 100.0 },
+        ],
+    };
+    let doc = from_tiled_pages(&[page]).unwrap();
+    let p = pages(&doc);
+    assert_eq!(p.len(), 1);
+    let m = media(&p[0]);
+    assert_eq!((m[2], m[3]), (100.0, 200.0));
+}

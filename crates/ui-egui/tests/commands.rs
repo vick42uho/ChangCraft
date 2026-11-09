@@ -71,8 +71,8 @@ const PICKERS: &[&str] = &[
 #[test]
 fn every_registered_command_is_implemented() {
     for spec in COMMANDS {
-        // Page-text Copy needs a loaded view and egui context, covered by ui_group::text_select.
-        if PICKERS.contains(&spec.id) || spec.id == "edit.copy" {
+        // Page-text Copy/Paste needs a loaded view and egui context, covered by ui_group::text_select.
+        if PICKERS.contains(&spec.id) || matches!(spec.id, "edit.copy" | "edit.paste") {
             continue;
         }
         let mut app = PdfCraftApp::new();
@@ -698,4 +698,40 @@ fn ctrl_tab_steps_through_the_tabs_in_order_and_wraps_around() {
     for doc in h.state().session.docs() {
         assert!(!doc.dirty, "switching tabs changes no document");
     }
+}
+
+#[test]
+fn annotation_copy_and_paste_roundtrip() {
+    let mut app = PdfCraftApp::new();
+    app.set_option("language", "en").unwrap();
+    app.open_bytes("doc.pdf", None, fixture(2)).unwrap();
+    use pdfcraft_engine::{Edit, NewAnnotation, Shape, Style};
+    let shape = Shape::TextBox { rect: [50.0, 50.0, 200.0, 100.0], font_size: 14.0 };
+    app.apply_edit(Edit::AddAnnotation(NewAnnotation {
+        page: 0,
+        shape,
+        style: Style::default_for(&Shape::TextBox { rect: [0.0; 4], font_size: 12.0 }),
+        contents: "Hello Thai สวัสดี".into(),
+        author: "Tester".into(),
+    }));
+    let id = app.views[0].id;
+    let annot_count_before = app.session.get(id).unwrap().info.annotations.len();
+    assert!(annot_count_before >= 1);
+    // Select the newly added annotation
+    app.views[0].comments.selected = Some((0, 0));
+    // Copy command
+    assert!(app.execute("edit.copy"));
+    assert!(app.annot_clipboard.is_some());
+    let clip = app.annot_clipboard.as_ref().unwrap();
+    assert_eq!(clip.contents, "Hello Thai สวัสดี");
+    // Switch to page 1
+    app.views[0].current = 1;
+    // Paste command
+    assert!(app.execute("edit.paste"));
+    let doc_after = app.session.get(id).unwrap();
+    let annot_count_after = doc_after.info.annotations.len();
+    assert_eq!(annot_count_after, annot_count_before + 1);
+    let pasted = doc_after.info.annotations.last().unwrap();
+    assert_eq!(pasted.page, 1);
+    assert_eq!(pasted.contents.as_deref(), Some("Hello Thai สวัสดี"));
 }

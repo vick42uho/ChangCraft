@@ -464,17 +464,30 @@ pub(crate) fn hex(c: [f64; 3]) -> Option<String> {
 /// A formatted text run (shared by paragraphs and table cells).
 fn run_xml(text: &str, size: f64, bold: bool, italic: bool, color: [f64; 3]) -> String {
     let mut rpr = String::new();
+    let has_thai = text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}'));
+    if has_thai {
+        rpr.push_str("<w:rFonts w:ascii=\"TH SarabunPSK\" w:hAnsi=\"TH SarabunPSK\" w:cs=\"TH SarabunPSK\" w:eastAsia=\"Leelawadee UI\"/>");
+    }
     if bold {
         rpr.push_str("<w:b/>");
+        if has_thai {
+            rpr.push_str("<w:bCs/>");
+        }
     }
     if italic {
         rpr.push_str("<w:i/>");
+        if has_thai {
+            rpr.push_str("<w:iCs/>");
+        }
     }
     if let Some(h) = hex(color) {
         rpr.push_str(&format!("<w:color w:val=\"{h}\"/>"));
     }
     let half_points = if size.is_finite() { (size * 2.0).round().clamp(2.0, 3276.0) as i64 } else { 24 };
     rpr.push_str(&format!("<w:sz w:val=\"{half_points}\"/>"));
+    if has_thai {
+        rpr.push_str(&format!("<w:szCs w:val=\"{half_points}\"/><w:lang w:val=\"th-TH\" w:bidi=\"th-TH\"/>"));
+    }
     format!("<w:r><w:rPr>{rpr}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r>", esc(text))
 }
 
@@ -780,9 +793,9 @@ xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawin
     }
     doc_rels.push_str("</Relationships>");
     let styles = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\
-<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:pPr><w:spacing w:after=\"120\"/></w:pPr></w:style>\
-<w:style w:type=\"paragraph\" w:styleId=\"Heading1\"><w:name w:val=\"heading 1\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:pPr><w:keepNext/><w:spacing w:before=\"240\"/><w:outlineLvl w:val=\"0\"/></w:pPr><w:rPr><w:b/></w:rPr></w:style>\
-<w:style w:type=\"paragraph\" w:styleId=\"Heading2\"><w:name w:val=\"heading 2\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:pPr><w:keepNext/><w:spacing w:before=\"200\"/><w:outlineLvl w:val=\"1\"/></w:pPr><w:rPr><w:b/></w:rPr></w:style>\
+<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:rPr><w:rFonts w:ascii=\"TH SarabunPSK\" w:hAnsi=\"TH SarabunPSK\" w:cs=\"TH SarabunPSK\" w:eastAsia=\"Leelawadee UI\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr><w:pPr><w:spacing w:after=\"120\"/></w:pPr></w:style>\
+<w:style w:type=\"paragraph\" w:styleId=\"Heading1\"><w:name w:val=\"heading 1\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:pPr><w:keepNext/><w:spacing w:before=\"240\"/><w:outlineLvl w:val=\"0\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"TH SarabunPSK\" w:hAnsi=\"TH SarabunPSK\" w:cs=\"TH SarabunPSK\" w:eastAsia=\"Leelawadee UI\"/><w:b/><w:bCs/><w:sz w:val=\"40\"/><w:szCs w:val=\"40\"/></w:rPr></w:style>\
+<w:style w:type=\"paragraph\" w:styleId=\"Heading2\"><w:name w:val=\"heading 2\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:pPr><w:keepNext/><w:spacing w:before=\"200\"/><w:outlineLvl w:val=\"1\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"TH SarabunPSK\" w:hAnsi=\"TH SarabunPSK\" w:cs=\"TH SarabunPSK\" w:eastAsia=\"Leelawadee UI\"/><w:b/><w:bCs/><w:sz w:val=\"36\"/><w:szCs w:val=\"36\"/></w:rPr></w:style>\
 </w:styles>";
     let core = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>{}</dc:title></cp:coreProperties>",
@@ -964,6 +977,32 @@ mod tests {
         for n in names {
             assert!(d.windows(n.len()).any(|w| w == n.as_bytes()), "{n}");
         }
+    }
+
+    #[test]
+    fn docx_preserves_thai_fonts_and_complex_script_formatting() {
+        let p = Page {
+            width: 595.0,
+            height: 842.0,
+            blocks: vec![
+                Block {
+                    text: "บันทึกข้อความ ภาษาไทย".into(),
+                    rect: [72.0, 700.0, 300.0, 720.0],
+                    size: 16.0,
+                    bold: true,
+                    italic: false,
+                    color: [0.0; 3],
+                    rotation: 0.0,
+                },
+            ],
+            images: Vec::new(),
+            background: None,
+        };
+        let xml = part(&docx(&[p], "Thai Document"), "word/document.xml");
+        assert!(xml.contains("TH SarabunPSK"), "Thai font is emitted: {xml}");
+        assert!(xml.contains("<w:bCs/>"), "Complex script bold is emitted: {xml}");
+        assert!(xml.contains("<w:szCs w:val=\"32\"/>"), "Complex script size is emitted: {xml}");
+        assert!(xml.contains("w:lang w:val=\"th-TH\""), "Thai language is tagged: {xml}");
     }
 
     #[test]

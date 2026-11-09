@@ -583,25 +583,30 @@ pub fn field_appearance_drawn(doc: &Document, f: &Field, w: &Widget, values: &[S
                 if size == 0.0 {
                     size = auto_text_size(&text, inner_w, height - 2.0 * pad, true, width_of);
                 }
-                let mut y = height - pad - size * 0.85;
+                // Lower baseline for Thai characters to prevent top marks (e.g. ธิ์ in บุญฤทธิ์) from being clipped
+                let mut y = if has_thai { height - pad - size * 1.0 } else { height - pad - size * 0.85 };
                 for line in wrap_with(&text, size, inner_w, width_of) {
                     if y < -size {
                         break;
                     }
                     show(&mut body, x_for(&line, size), y, &line, size);
-                    y -= size * 1.15;
+                    y -= if has_thai { size * 1.2 } else { size * 1.15 };
                 }
             } else {
                 if size == 0.0 {
                     // Comb cells hold one character each, so only the height limits them.
                     size = if comb {
-                        ((height - 2.0 * pad) / 1.15).clamp(4.0, 12.0)
+                        ((height - 2.0 * pad) / if has_thai { 1.35 } else { 1.15 }).clamp(4.0, 12.0)
                     } else {
                         auto_text_size(&text, inner_w, height - 2.0 * pad, false, width_of)
                     };
                 }
-                // Centre Helvetica's ascent (0.718) and descent (0.207) vertically.
-                let y = (height - 0.925 * size) / 2.0 + 0.207 * size;
+                // Centre Helvetica's ascent (0.718) and descent (0.207) vertically, or adjust for Thai stacked bounds.
+                let y = if has_thai {
+                    (height - 1.15 * size) / 2.0 + 0.22 * size
+                } else {
+                    (height - 0.925 * size) / 2.0 + 0.207 * size
+                };
                 if comb {
                     let cells = f.max_len.unwrap_or(1).max(1);
                     let cell = width / cells as f64;

@@ -27,6 +27,7 @@ pub(crate) const NEXT_VIEW: Shortcut = Shortcut::cmd("]");
 pub(crate) const FIND_NEXT: Shortcut = Shortcut::cmd("G");
 pub(crate) const FIND_PREV: Shortcut = Shortcut::cmd_shift("G");
 pub(crate) const COPY: Shortcut = Shortcut::cmd("C");
+pub(crate) const PASTE: Shortcut = Shortcut::cmd("V");
 pub(crate) const SELECT_ALL: Shortcut = Shortcut::cmd("A");
 pub(crate) const PAGE_PREV: Shortcut = Shortcut::cmd("←");
 pub(crate) const PAGE_NEXT: Shortcut = Shortcut::cmd("→");
@@ -86,7 +87,8 @@ impl PdfCraftApp {
         }
         commands::is_enabled(spec, &self.session, self.active_ids().map(|(_, id)| id))
             && (spec.id != "edit.copy"
-                || self.active.and_then(|i| self.views.get(i)).is_some_and(|v| !v.organize && v.selected_text().is_some_and(|t| !t.is_empty())))
+                || self.active.and_then(|i| self.views.get(i)).is_some_and(|v| !v.organize && (v.comments.selected.is_some() || v.selected_text().is_some_and(|t| !t.is_empty()))))
+            && (spec.id != "edit.paste" || self.annot_clipboard.is_some())
             && (spec.needs != commands::Needs::TwoPageView || self.active.and_then(|i| self.views.get(i)).is_some_and(crate::DocView::cover_applies))
             && match spec.id {
                 "view.previous_view" => self.active.and_then(|i| self.views.get(i)).is_some_and(|v| !v.back.is_empty()),
@@ -547,8 +549,22 @@ impl PdfCraftApp {
                 self.notify_tr("Drag a rectangle around the area to copy");
             }
             "edit.copy" => {
-                if let (Some(i), Some(ctx)) = (active, self.ctx.clone()) {
-                    return self.copy_selected_text(i, &ctx);
+                if let Some(i) = active {
+                    if let Some((page, annot_idx)) = self.views.get(i).and_then(|v| v.comments.selected) {
+                        self.copy_annotation(page, annot_idx);
+                        return true;
+                    }
+                    if let Some(ctx) = self.ctx.clone() {
+                        return self.copy_selected_text(i, &ctx);
+                    }
+                }
+                return false;
+            }
+            "edit.paste" => {
+                if let Some(i) = active {
+                    let target_page = self.views[i].current;
+                    self.paste_annotation(target_page);
+                    return true;
                 }
                 return false;
             }
@@ -847,7 +863,7 @@ pub(crate) fn registry_menu(app: &mut PdfCraftApp, ui: &mut egui::Ui, menu: &str
             }
             continue;
         }
-        let shortcut = spec.shortcut.or((spec.id == "edit.copy").then_some(COPY)).map(|s| shortcut_label(ui.ctx(), s)).unwrap_or_default();
+        let shortcut = spec.shortcut.or((spec.id == "edit.copy").then_some(COPY)).or((spec.id == "edit.paste").then_some(PASTE)).map(|s| shortcut_label(ui.ctx(), s)).unwrap_or_default();
         let enabled = app.command_enabled(spec);
         let resp = ui.add_enabled(enabled, egui::Button::new(label).shortcut_text(shortcut));
         if resp.clicked() {

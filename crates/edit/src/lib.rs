@@ -270,6 +270,21 @@ fn rgb(c: Rgb) -> String {
 
 const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+const THAI_MONTHS: [&str; 12] = [
+    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+];
+
+fn to_thai_digits(n: u64) -> String {
+    n.to_string()
+        .chars()
+        .map(|c| match c {
+            '0'..='9' => char::from_u32(c as u32 - '0' as u32 + 0x0E50).unwrap_or(c),
+            _ => c,
+        })
+        .collect()
+}
+
 /// Expand `<<…>>` tokens for page `index` (0-based within the range) of `count`.
 pub fn expand(template: &str, page_number: u32, count: usize, bates: u64, cx: &Context) -> String {
     let (y, m, d) = cx.date;
@@ -291,6 +306,13 @@ pub fn expand(template: &str, page_number: u32, count: usize, bates: u64, cx: &C
             "1/n" => format!("{p}/{count}"),
             "Page 1" => format!("Page {p}"),
             "Page 1 of n" => format!("Page {p} of {count}"),
+            "หน้า 1" => format!("หน้า {p}"),
+            "หน้า 1 จาก n" => format!("หน้า {p} จาก {count}"),
+            "หน้า 1/n" => format!("หน้า {p}/{count}"),
+            "๑" => to_thai_digits(p as u64),
+            "หน้า ๑" => format!("หน้า {}", to_thai_digits(p as u64)),
+            "หน้า ๑ จาก n" => format!("หน้า {} จาก {}", to_thai_digits(p as u64), to_thai_digits(count as u64)),
+            "๑/n" => format!("{}/{}", to_thai_digits(p as u64), to_thai_digits(count as u64)),
             "m/d" => format!("{m}/{d}"),
             "m/d/yy" => format!("{m}/{d}/{:02}", y.rem_euclid(100)),
             "m/d/yyyy" => format!("{m}/{d}/{y}"),
@@ -299,10 +321,13 @@ pub fn expand(template: &str, page_number: u32, count: usize, bates: u64, cx: &C
             "d/m/yy" => format!("{d}/{m}/{:02}", y.rem_euclid(100)),
             "d/m/yyyy" => format!("{d}/{m}/{y}"),
             "dd/mm/yyyy" => format!("{d:02}/{m:02}/{y}"),
+            "d/m/yyyy (พ.ศ.)" => format!("{d}/{m}/{}", y + 543),
+            "dd/mm/yyyy (พ.ศ.)" => format!("{d:02}/{m:02}/{}", y + 543),
             "yyyy-mm-dd" => format!("{y}-{m:02}-{d:02}"),
             "yyyy/mm/dd" => format!("{y}/{m:02}/{d:02}"),
             "yyyy/m/d" => format!("{y}/{m}/{d}"),
             "mmmm d, yyyy" => format!("{} {d}, {y}", MONTHS[(m.clamp(1, 12) - 1) as usize]),
+            "d mmmm yyyy (พ.ศ.)" => format!("{d} {} {}", THAI_MONTHS[(m.clamp(1, 12) - 1) as usize], y + 543),
             t if t.starts_with("Bates Number") => {
                 // Bates Number#digits#start#prefix#suffix (start is applied by the caller).
                 let parts: Vec<&str> = t.split('#').collect();

@@ -853,6 +853,11 @@ impl crate::PdfCraftApp {
         if !pasted || !free || view.organize || view.forms.focus.is_some() || self.is_preparing() {
             return;
         }
+        if self.annot_clipboard.is_some() {
+            let target_page = view.current;
+            self.paste_annotation(target_page);
+            return;
+        }
         let clip = match self.clipboard_override.clone() {
             Some(c) => Some(c),
             #[cfg(not(target_arch = "wasm32"))]
