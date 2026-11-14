@@ -31,7 +31,7 @@ pub fn key_candidates() -> Vec<PathBuf> {
             dirs.push(PathBuf::from(xdg).join("pdfcraft").join("typhoon.key"));
         }
         if let Some(home) = std::env::var_os("HOME") {
-            dirs.push(PathBuf::from(home).join(".config/pdfcraft/typhoon.key"));
+            dirs.push(PathBuf::from(&home).join(".config/pdfcraft/typhoon.key"));
             dirs.push(PathBuf::from(home).join(".local/share/PdfCraft/typhoon.key"));
         }
     }
