@@ -52,6 +52,8 @@ pub struct Page {
     /// The colour the whole page is painted before its content (a page background), as sRGB
     /// components in 0..=1; `None` for a page with no background of its own.
     pub background: Option<[f64; 3]>,
+    pub highlights: Vec<([f64; 4], [f64; 3])>,
+    pub lines: Vec<[f64; 4]>,
 }
 
 /// One cell of a detected table. `span` is how many grid columns the cell covers (a header
@@ -65,6 +67,8 @@ pub struct Cell {
     /// Text fill colour as sRGB components in 0..=1.
     pub color: [f64; 3],
     pub span: usize,
+    /// Background cell fill colour as hex string (e.g. "FFFF00").
+    pub fill: Option<String>,
 }
 
 /// A table detected from the page's text layout: rows of cells, and the left edge of each
@@ -74,11 +78,18 @@ pub struct Table {
     pub rect: [f64; 4],
     pub cols: Vec<f64>,
     pub rows: Vec<Vec<Cell>>,
+    pub bordered: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Run<'a> {
+    pub(crate) block: &'a Block,
+    pub(crate) text: String,
 }
 
 /// What goes into the output, in order.
 enum Item<'a> {
-    Para(&'a Block, u8),
+    Para(Vec<Run<'a>>, u8),
     /// Owned: tables are detected per page inside [`items`], so they cannot borrow.
     Table(Table),
     Img(&'a Image),
@@ -123,10 +134,9 @@ const INLINE_GAP: f64 = 0.5;
 /// How many blocks ending near a block's start are looked at to find the one it continues; a
 /// page laid out so that many end at the same place stays quick.
 const CONTINUATION_PROBE: usize = 64;
-/// Per block, whether it continues another on the same line: it starts where that one ends (up to
-/// [`INLINE_GAP`] later, or a point earlier for rounding), so it is the same line of text running
-/// on (a link inside a sentence, a superscript), not a cell of its own.
-fn continuations(blocks: &[Block]) -> Vec<bool> {
+/// Per block, the block it continues on the same line (see [`continuations`]): of those it could
+/// continue, the one that ends nearest to where it starts.
+fn continued_from(blocks: &[Block]) -> Vec<Option<usize>> {
     let mut by_end: Vec<(f64, usize)> = blocks.iter().enumerate().map(|(i, b)| (b.rect[2], i)).collect();
     by_end.sort_by(|a, b| a.0.total_cmp(&b.0));
     blocks
@@ -140,11 +150,82 @@ fn continuations(blocks: &[Block]) -> Vec<bool> {
                 .iter()
                 .take_while(|(end, _)| *end <= b.rect[0] + 1.0)
                 .take(CONTINUATION_PROBE)
-                .filter_map(|(_, ai)| blocks.get(*ai).filter(|_| *ai != bi))
-                .any(|a| a.rect[3].min(b.rect[3]) - a.rect[1].max(b.rect[1]) > 0.5 * (a.rect[3] - a.rect[1]).min(b.rect[3] - b.rect[1]))
+                .filter_map(|(_, ai)| blocks.get(*ai).filter(|_| *ai != bi).map(|a| (*ai, a)))
+                .filter(|(_, a)| a.rect[3].min(b.rect[3]) - a.rect[1].max(b.rect[1]) > 0.5 * (a.rect[3] - a.rect[1]).min(b.rect[3] - b.rect[1]))
+                .min_by(|(_, a), (_, c)| (a.rect[2] - b.rect[0]).abs().total_cmp(&(c.rect[2] - b.rect[0]).abs()))
+                .map(|(ai, _)| ai)
         })
         .collect()
 }
+
+/// Per block, whether it continues another on the same line: it starts where that one ends (up to
+/// [`INLINE_GAP`] later, or a point earlier for rounding), so it is the same line of text running
+/// on (a link inside a sentence, a superscript), not a cell of its own.
+fn continuations(blocks: &[Block]) -> Vec<bool> {
+    continued_from(blocks).into_iter().map(|from| from.is_some()).collect()
+}
+
+const WORD_GAP: f64 = 0.12;
+
+/// A page's paragraphs, each a list of runs from left to right along its line. A block that
+/// continues another on the same line ([`continued_from`]: an italic case name, a link, a
+/// superscript) is a run in its own style inside that block's paragraph, not a paragraph of its
+/// own (#4158). Blocks marked in `skip` (table cells, a slide title) are left out and join
+/// nothing. Paragraphs come in the order of their first runs in `blocks`.
+pub(crate) fn paragraphs<'a>(blocks: &'a [Block], skip: &[bool]) -> Vec<Vec<Run<'a>>> {
+    let skipped = |i: usize| skip.get(i).copied().unwrap_or(false);
+    let from = continued_from(blocks);
+    let mut order: Vec<(f64, usize)> = blocks.iter().enumerate().filter(|(i, _)| !skipped(*i)).map(|(i, b)| (b.rect[0], i)).collect();
+    order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    let mut head: Vec<usize> = (0..blocks.len()).collect();
+    let mut members: Vec<Vec<usize>> = vec![Vec::new(); blocks.len()];
+    for &(x0, bi) in &order {
+        let Some(b) = blocks.get(bi) else { continue };
+        let joined = from
+            .get(bi)
+            .copied()
+            .flatten()
+            .filter(|ai| !skipped(*ai))
+            .filter(|ai| blocks.get(*ai).is_some_and(|a| a.rect[0].total_cmp(&x0).is_lt() && (a.rotation - b.rotation).abs() <= 0.1))
+            .and_then(|ai| head.get(ai).copied());
+        let h = joined.unwrap_or(bi);
+        if let Some(slot) = head.get_mut(bi) {
+            *slot = h;
+        }
+        if let Some(m) = members.get_mut(h) {
+            m.push(bi);
+        }
+    }
+    members
+        .into_iter()
+        .filter(|m| !m.is_empty())
+        .map(|m| {
+            let mut runs: Vec<Run<'a>> = Vec::with_capacity(m.len());
+            for b in m.into_iter().filter_map(|bi| blocks.get(bi)) {
+                if let Some(prev) = runs.last_mut()
+                    && !prev.text.ends_with(char::is_whitespace)
+                    && !b.text.starts_with(char::is_whitespace)
+                    && (b.rect[0] - prev.block.rect[2] > b.size * WORD_GAP)
+                {
+                    prev.text.push(' ');
+                }
+                runs.push(Run { block: b, text: b.text.clone() });
+            }
+            runs
+        })
+        .collect()
+}
+
+fn para_level(runs: &[Run], body: f64) -> u8 {
+    let Some(first) = runs.first() else { return 0 };
+    let marker = |r: &Run| r.block.size < first.block.size * 0.9 && r.block.text.trim().chars().count() <= 3;
+    runs.iter().filter(|r| !marker(r)).map(|r| level(r.block, body)).min().unwrap_or(0)
+}
+/// Whether a char is in the Thai Unicode block.
+fn is_thai_char(c: char) -> bool {
+    matches!(c, '\u{0E00}'..='\u{0E7F}')
+}
+
 /// A cell is short: taller blocks are body text (or a multi-column layout), not table cells.
 fn is_cell_like(b: &Block) -> bool {
     (b.rect[3] - b.rect[1]) <= b.size * 5.0 && !b.text.trim().is_empty()
@@ -153,7 +234,7 @@ fn is_cell_like(b: &Block) -> bool {
 /// Detect tables in a page's blocks from their text layout: columns are left edges shared by
 /// several short blocks, rows are blocks whose vertical spans overlap. Returns the tables and,
 /// per block, whether a table consumed it (so `items` can drop it from the paragraph flow).
-pub(crate) fn tables(blocks: &[Block]) -> (Vec<Table>, Vec<bool>) {
+pub(crate) fn tables(blocks: &[Block], highlights: &[([f64; 4], [f64; 3])], lines: &[[f64; 4]]) -> (Vec<Table>, Vec<bool>) {
     let mut consumed = vec![false; blocks.len()];
     // Candidate columns: cluster the left edges of cell-like blocks.
     let mut xs: Vec<(f64, usize)> = blocks.iter().enumerate().filter(|(_, b)| is_cell_like(b)).map(|(i, b)| (b.rect[0], i)).collect();
@@ -181,12 +262,24 @@ pub(crate) fn tables(blocks: &[Block]) -> (Vec<Table>, Vec<bool>) {
             }
         }
     }
-    // The column whose edge is within tolerance of `x` (edges are in ascending order).
-    let column_at = |x: f64| -> Option<usize> {
+    // The column whose edge is within tolerance of `x`, or whose interval contains `b`.
+    let column_for_block = |b: &Block| -> Option<usize> {
+        let x = b.rect[0];
         let k = cols.partition_point(|(e, _)| *e < x - COL_TOL);
-        cols.get(k).filter(|(e, _)| (*e - x).abs() <= COL_TOL).map(|_| k)
+        if cols.get(k).is_some_and(|(e, _)| (*e - x).abs() <= COL_TOL) {
+            return Some(k);
+        }
+        let center = (b.rect[0] + b.rect[2]) / 2.0;
+        for ci in 0..cols.len() {
+            let left_boundary = if ci == 0 { cols[0].0 - COL_TOL } else { cols[ci].0 - COL_TOL };
+            let right_boundary = if ci + 1 < cols.len() { cols[ci + 1].0 - COL_TOL } else { f64::MAX };
+            if (b.rect[0] >= left_boundary && b.rect[0] < right_boundary) || (center >= left_boundary && center < right_boundary) {
+                return Some(ci);
+            }
+        }
+        None
     };
-    // Assign every cell-like block to its nearest column (within tolerance).
+    // Assign every cell-like block to its nearest column (within tolerance or column span).
     let mut rows: Vec<Vec<(usize, usize)>> = Vec::new(); // (column index, block index), top to bottom
     let mut order: Vec<usize> = (0..blocks.len()).collect();
     order.sort_by(|a, b| blocks[*b].rect[3].total_cmp(&blocks[*a].rect[3]).then(blocks[*a].rect[0].total_cmp(&blocks[*b].rect[0])));
@@ -195,7 +288,10 @@ pub(crate) fn tables(blocks: &[Block]) -> (Vec<Table>, Vec<bool>) {
         if !is_cell_like(b) {
             continue;
         }
-        let Some(ci) = column_at(b.rect[0]) else { continue };
+        let Some(ci) = column_for_block(b) else { continue };
+        if let Some(c) = col_of.get_mut(bi) {
+            *c = Some(ci);
+        }
         let joins = rows
             .last()
             .and_then(|row| row.first())
@@ -226,6 +322,20 @@ pub(crate) fn tables(blocks: &[Block]) -> (Vec<Table>, Vec<bool>) {
         let mut edges: Vec<f64> = used.iter().filter_map(|&i| col_of.get(i).copied().flatten()).filter_map(|ci| cols.get(ci)).map(|c| c.0).collect();
         edges.sort_by(|a, b| a.total_cmp(b));
         edges.dedup_by(|a, b| (*a - *b).abs() <= COL_TOL);
+        if run.len() >= 4 {
+            let mut pruned: Vec<f64> = Vec::new();
+            for e in edges {
+                let count = run.iter().flatten().filter(|(_, bi)| (blocks[*bi].rect[0] - e).abs() <= COL_TOL).count();
+                if let Some(prev) = pruned.last() {
+                    let min_gap = if pruned.len() == 1 { 18.0 } else { 32.0 };
+                    if (e - *prev) < min_gap || (run.len() >= 5 && count <= 2) || ((e - *prev) < 70.0 && count < run.len() / 2) {
+                        continue;
+                    }
+                }
+                pruned.push(e);
+            }
+            edges = pruned;
+        }
         let ncols = edges.len();
         let ok = (ncols >= 3 || (ncols == 2 && run.len() >= 3)) && ncols <= MAX_COLS;
         if !ok {
@@ -233,26 +343,79 @@ pub(crate) fn tables(blocks: &[Block]) -> (Vec<Table>, Vec<bool>) {
             return;
         }
         let right = used.iter().map(|&i| blocks[i].rect[2]).fold(f64::MIN, f64::max) + COL_TOL;
-        let mut rows_out = Vec::new();
+        let mut rows_out: Vec<Vec<Cell>> = Vec::new();
         let mut slots: Vec<Option<Cell>> = vec![None; ncols];
         for row in run.drain(..) {
             for slot in slots.iter_mut() {
                 *slot = None;
             }
-            for (_ci, bi) in row {
+            for (ci, bi) in row {
                 let b = &blocks[bi];
-                let Some(slot) = edges.iter().position(|e| (*e - b.rect[0]).abs() <= COL_TOL) else { continue };
+                let slot = edges
+                    .iter()
+                    .position(|e| (*e - b.rect[0]).abs() <= COL_TOL)
+                    .or_else(|| cols.get(ci).and_then(|(col_x, _)| edges.iter().position(|e| (*e - col_x).abs() <= COL_TOL)))
+                    .unwrap_or_else(|| edges.partition_point(|&e| e <= b.rect[0] + COL_TOL).saturating_sub(1));
+                if slot >= ncols {
+                    continue;
+                }
                 let span = edges[slot + 1..].iter().filter(|e| **e > b.rect[0] + COL_TOL && **e < b.rect[2] - COL_TOL).count() + 1;
-                let cell = Cell { text: b.text.trim().to_string(), size: b.size, bold: b.bold, italic: b.italic, color: b.color, span };
+                let cell_fill = highlights
+                    .iter()
+                    .find(|(hr, _)| {
+                        let ix0 = hr[0].max(b.rect[0]);
+                        let iy0 = hr[1].max(b.rect[1]);
+                        let ix1 = hr[2].min(b.rect[2]);
+                        let iy1 = hr[3].min(b.rect[3]);
+                        (ix1 > ix0) && (iy1 > iy0)
+                    })
+                    .and_then(|(_, c)| hex(*c));
+                let cell =
+                    Cell { text: b.text.trim().to_string(), size: b.size, bold: b.bold, italic: b.italic, color: b.color, span, fill: cell_fill };
                 match &mut slots[slot] {
                     Some(c) => {
                         c.text.push(' ');
                         c.text.push_str(&cell.text);
+                        if c.fill.is_none() {
+                            c.fill = cell.fill;
+                        }
                     }
                     None => slots[slot] = Some(cell),
                 }
                 consumed[bi] = true;
             }
+
+            // If this row has no item number in column 0, and only has 1 filled cell,
+            // merge it into the previous row rather than creating a fragmented empty row!
+            let filled_count = slots.iter().filter(|s| s.is_some()).count();
+            if filled_count == 1
+                && slots[0].is_none()
+                && !rows_out.is_empty()
+                && let Some(pos) = slots.iter().position(|s| s.is_some())
+                && let Some(cont_cell) = slots[pos].take()
+                && let Some(prev_row) = rows_out.last_mut()
+            {
+                let mut cur_col = 0;
+                let mut target_cell = None;
+                for c in prev_row.iter_mut() {
+                    if cur_col <= pos && pos < cur_col + c.span {
+                        target_cell = Some(c);
+                        break;
+                    }
+                    cur_col += c.span;
+                }
+                if let Some(prev_cell) = target_cell {
+                    if !prev_cell.text.is_empty() {
+                        prev_cell.text.push(' ');
+                    }
+                    prev_cell.text.push_str(&cont_cell.text);
+                    if prev_cell.fill.is_none() {
+                        prev_cell.fill = cont_cell.fill;
+                    }
+                    continue;
+                }
+            }
+
             let mut materialized = Vec::with_capacity(ncols);
             let mut column = 0;
             while column < ncols {
@@ -264,7 +427,7 @@ pub(crate) fn tables(blocks: &[Block]) -> (Vec<Table>, Vec<bool>) {
                     }
                     None => {
                         column += 1;
-                        materialized.push(Cell { text: String::new(), size: 11.0, bold: false, italic: false, color: [0.0; 3], span: 1 });
+                        materialized.push(Cell { text: String::new(), size: 11.0, bold: false, italic: false, color: [0.0; 3], span: 1, fill: None });
                     }
                 }
             }
@@ -279,7 +442,9 @@ pub(crate) fn tables(blocks: &[Block]) -> (Vec<Table>, Vec<bool>) {
             right,
             used.iter().map(|&i| blocks[i].rect[3]).fold(f64::MIN, f64::max),
         ];
-        out.push(Table { rect, cols: edges, rows: rows_out });
+        let bordered = lines.iter().any(|lr| lr[0] < rect[2] + 2.0 && lr[2] > rect[0] - 2.0 && lr[1] < rect[3] + 2.0 && lr[3] > rect[1] - 2.0)
+            || rows_out.iter().flatten().any(|c| c.text.chars().any(is_thai_char));
+        out.push(Table { rect, cols: edges, rows: rows_out, bordered });
     };
     // Runs of consecutive multi-column rows are tables. Rows on either side of a run that
     // hold a single cell wide enough to span two columns (a header band, a totals row) join
@@ -296,7 +461,7 @@ pub(crate) fn tables(blocks: &[Block]) -> (Vec<Table>, Vec<bool>) {
         es
     };
     let cont = continuations(blocks);
-    let qual: Vec<bool> = rows
+    let mut qual: Vec<bool> = rows
         .iter()
         .map(|row| {
             // A block that continues another adds no column of its own, and the cells of a table row
@@ -311,6 +476,18 @@ pub(crate) fn tables(blocks: &[Block]) -> (Vec<Table>, Vec<bool>) {
             apart && cs.len() >= 2
         })
         .collect();
+    // Allow single-cell rows that sit between qualified table rows to remain part of the table
+    // (continuation lines within wrapped cells).
+    for idx in 1..rows.len().saturating_sub(1) {
+        if !qual[idx] && qual[idx - 1] {
+            let prev_bottom = rows[idx - 1].iter().map(|(_, bi)| blocks[*bi].rect[1]).fold(f64::MAX, f64::min);
+            let curr_top = rows[idx].iter().map(|(_, bi)| blocks[*bi].rect[3]).fold(f64::MIN, f64::max);
+            let next_is_table = qual.get(idx + 1).copied().unwrap_or(false) || qual.get(idx + 2).copied().unwrap_or(false);
+            if next_is_table && (prev_bottom - curr_top) < 28.0 {
+                qual[idx] = true;
+            }
+        }
+    }
     let mut i = 0;
     while i < rows.len() {
         if !qual[i] {
@@ -335,6 +512,26 @@ pub(crate) fn tables(blocks: &[Block]) -> (Vec<Table>, Vec<bool>) {
     (out, consumed)
 }
 
+fn coalesce_tables(tables: Vec<Table>) -> Vec<Table> {
+    let mut out: Vec<Table> = Vec::new();
+    for t in tables {
+        let merge_into = out
+            .last()
+            .is_some_and(|prev| prev.cols.len() == t.cols.len() && prev.cols.iter().zip(&t.cols).all(|(a, b)| (*a - *b).abs() <= COL_TOL * 2.0));
+        if merge_into && let Some(prev) = out.last_mut() {
+            prev.rows.extend(t.rows);
+            prev.rect[0] = prev.rect[0].min(t.rect[0]);
+            prev.rect[1] = prev.rect[1].min(t.rect[1]);
+            prev.rect[2] = prev.rect[2].max(t.rect[2]);
+            prev.rect[3] = prev.rect[3].max(t.rect[3]);
+            prev.bordered |= t.bordered;
+        } else {
+            out.push(t);
+        }
+    }
+    out
+}
+
 fn items(pages: &[Page]) -> Vec<Item<'_>> {
     let body = body_size(pages);
     let mut out = Vec::new();
@@ -342,14 +539,17 @@ fn items(pages: &[Page]) -> Vec<Item<'_>> {
         if i > 0 {
             out.push(Item::PageBreak);
         }
-        let (tables, consumed) = tables(&p.blocks);
+        let (tables, consumed) = tables(&p.blocks, &p.highlights, &p.lines);
+        let tables = coalesce_tables(tables);
         // Blocks and images by their top edge, top to bottom.
-        let mut parts: Vec<(f64, f64, Item)> = p
-            .blocks
-            .iter()
-            .enumerate()
-            .filter(|(bi, _)| !consumed.get(*bi).copied().unwrap_or(false))
-            .map(|(_, b)| (b.rect[3], b.rect[0], Item::Para(b, level(b, body))))
+        // A paragraph sits where its first run does: its other runs follow along the same line.
+        let mut parts: Vec<(f64, f64, Item)> = paragraphs(&p.blocks, &consumed)
+            .into_iter()
+            .filter_map(|runs| {
+                let first = runs.first()?.block;
+                let lvl = para_level(&runs, body);
+                Some((first.rect[3], first.rect[0], Item::Para(runs, lvl)))
+            })
             .collect();
         parts.extend(tables.into_iter().map(|t| (t.rect[3], t.rect[0], Item::Table(t))));
         parts.extend(p.images.iter().map(|im| (im.rect[3], im.rect[0], Item::Img(im))));
@@ -404,18 +604,42 @@ table{{border-collapse:collapse;margin:1em 0}}td,th{{border:1px solid #999;paddi
     );
     for it in items(pages) {
         match it {
-            Item::Para(b, lvl) => {
-                let mut t = esc(&b.text);
-                if b.italic {
-                    t = format!("<em>{t}</em>");
-                }
-                if b.bold && lvl == 0 {
-                    t = format!("<strong>{t}</strong>");
-                }
-                let style = hex(b.color).map_or(String::new(), |h| format!(" style=\"color:#{h}\""));
-                match lvl {
-                    0 => s.push_str(&format!("<p{style}>{t}</p>\n")),
-                    l => s.push_str(&format!("<h{l}{style}>{t}</h{l}>\n")),
+            Item::Para(runs, lvl) => {
+                if runs.len() == 1 {
+                    let r = &runs[0];
+                    let mut t = esc(&r.text);
+                    if r.block.italic {
+                        t = format!("<em>{t}</em>");
+                    }
+                    if r.block.bold && lvl == 0 {
+                        t = format!("<strong>{t}</strong>");
+                    }
+                    let style = hex(r.block.color).map_or(String::new(), |h| format!(" style=\"color:#{h}\""));
+                    match lvl {
+                        0 => s.push_str(&format!("<p{style}>{t}</p>\n")),
+                        l => s.push_str(&format!("<h{l}{style}>{t}</h{l}>\n")),
+                    }
+                } else {
+                    let mut p_str = String::new();
+                    for r in runs {
+                        let mut t = esc(&r.text);
+                        if r.block.italic {
+                            t = format!("<em>{t}</em>");
+                        }
+                        if r.block.bold && lvl == 0 {
+                            t = format!("<strong>{t}</strong>");
+                        }
+                        let style = hex(r.block.color).map_or(String::new(), |h| format!(" style=\"color:#{h}\""));
+                        if !style.is_empty() {
+                            p_str.push_str(&format!("<span{style}>{t}</span>"));
+                        } else {
+                            p_str.push_str(&t);
+                        }
+                    }
+                    match lvl {
+                        0 => s.push_str(&format!("<p>{p_str}</p>\n")),
+                        l => s.push_str(&format!("<h{l}>{p_str}</h{l}>\n")),
+                    }
                 }
             }
             Item::Table(t) => {
@@ -495,31 +719,55 @@ fn run_xml(text: &str, size: f64, bold: bool, italic: bool, color: [f64; 3]) -> 
 /// from the detected column edges, `gridSpan` for spanning cells, empty cells for holes.
 fn docx_table(t: &Table) -> String {
     let mut edges = t.cols.clone();
+    if let Some(first) = edges.first_mut() {
+        *first = (*first).min(t.rect[0]);
+    }
     edges.push(t.rect[2]);
-    let widths: Vec<i64> = edges.windows(2).map(|w| ((w[1] - w[0]).max(20.0) * 20.0).round().clamp(60.0, 31680.0) as i64).collect();
-    let mut s = String::from("<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblBorders>");
+    let mut widths: Vec<i64> = edges.windows(2).map(|w| ((w[1] - w[0]).max(20.0) * 20.0).round().clamp(60.0, 31680.0) as i64).collect();
+    if widths.len() >= 2 && widths[0] < 660 {
+        let diff = 660 - widths[0];
+        widths[0] = 660;
+        if widths[1] > diff + 200 {
+            widths[1] -= diff;
+        }
+    }
+    let (border_val, border_attrs) = if t.bordered { ("single", " w:sz=\"4\" w:space=\"0\" w:color=\"000000\"") } else { ("nil", "") };
+    let mut s = String::from(
+        "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:left w:w=\"106\" w:type=\"dxa\"/><w:right w:w=\"106\" w:type=\"dxa\"/></w:tblCellMar><w:tblBorders>",
+    );
     for edge in ["top", "left", "bottom", "right", "insideH", "insideV"] {
-        s.push_str(&format!("<w:{edge} w:val=\"nil\"/>"));
+        s.push_str(&format!("<w:{edge} w:val=\"{border_val}\"{border_attrs}/>"));
     }
     s.push_str("</w:tblBorders></w:tblPr><w:tblGrid>");
     for w in &widths {
         s.push_str(&format!("<w:gridCol w:w=\"{w}\"/>"));
     }
     s.push_str("</w:tblGrid>");
-    for row in &t.rows {
-        s.push_str("<w:tr>");
+    for (row_idx, row) in t.rows.iter().enumerate() {
+        let is_header = row_idx == 0;
+        if is_header {
+            s.push_str("<w:tr><w:trPr><w:tblHeader/></w:trPr>");
+        } else {
+            s.push_str("<w:tr>");
+        }
+        let mut col_idx = 0;
         for c in row {
             let span = if c.span > 1 { format!("<w:gridSpan w:val=\"{}\"/>", c.span) } else { String::new() };
-            let w: i64 = widths.iter().take(c.span.min(widths.len())).sum();
+            let w: i64 = widths.iter().skip(col_idx).take(c.span.min(widths.len().saturating_sub(col_idx))).sum();
+            let is_number = col_idx == 0 && c.text.chars().all(|ch| ch.is_ascii_digit() || ch.is_whitespace());
+            let jc = if is_header || is_number { "<w:jc w:val=\"center\"/>" } else { "" };
+            let shd = if let Some(fill) = &c.fill { format!("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{fill}\"/>") } else { String::new() };
+            col_idx += c.span;
             s.push_str(&format!(
-                "<w:tc><w:tcPr><w:tcW w:w=\"{w}\" w:type=\"dxa\"/>{span}</w:tcPr><w:p>{}</w:p></w:tc>",
-                run_xml(&c.text, c.size, c.bold, c.italic, c.color)
+                "<w:tc><w:tcPr><w:tcW w:w=\"{w}\" w:type=\"dxa\"/>{span}{shd}<w:vAlign w:val=\"center\"/></w:tcPr><w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\"/>{jc}</w:pPr>{}</w:p></w:tc>",
+                run_xml(&c.text, c.size, c.bold || is_header, c.italic, c.color)
             ));
         }
         // Pad the grid so every row covers all columns (Word rejects short rows).
-        let used: usize = row.iter().map(|c| c.span).sum();
-        for _ in used..t.cols.len() {
-            s.push_str("<w:tc><w:tcPr><w:tcW w:w=\"0\" w:type=\"auto\"/></w:tcPr><w:p/></w:tc>");
+        let used = col_idx;
+        for i in used..widths.len() {
+            let w = widths.get(i).copied().unwrap_or(0);
+            s.push_str(&format!("<w:tc><w:tcPr><w:tcW w:w=\"{w}\" w:type=\"dxa\"/><w:vAlign w:val=\"center\"/></w:tcPr><w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\"/></w:pPr></w:p></w:tc>"));
         }
         s.push_str("</w:tr>");
     }
@@ -668,13 +916,32 @@ fn word_page_size(page: &Page) -> (i64, i64) {
     (twips(page.width), twips(page.height))
 }
 
-fn section(page: &Page) -> String {
+fn page_margins(page: &Page) -> (i64, i64, i64, i64, i64, i64) {
     let (pw, ph) = word_page_size(page);
     let (mx, my) = ((pw / 8).min(1440), (ph / 8).min(1440));
+    if pw < 4000 || ph < 4000 || (page.blocks.is_empty() && page.images.is_empty()) {
+        return (mx, mx, my, my, my / 2, my / 2);
+    }
+    let twips = |pt: f64| (pt * 20.0).round() as i64;
+    let left_pt = page.blocks.iter().map(|b| b.rect[0]).fold(f64::INFINITY, f64::min);
+    let right_pt = page.blocks.iter().map(|b| (page.width - b.rect[2]).max(0.0)).fold(f64::INFINITY, f64::min);
+    let top_pt = page.blocks.iter().map(|b| (page.height - b.rect[3]).max(0.0)).fold(f64::INFINITY, f64::min);
+    let bottom_pt = page.blocks.iter().map(|b| b.rect[1]).fold(f64::INFINITY, f64::min);
+
+    let left = if left_pt.is_finite() { twips(left_pt).clamp(360, mx) } else { mx };
+    let right = if right_pt.is_finite() { twips(right_pt).clamp(360, mx) } else { mx };
+    let top = if top_pt.is_finite() { twips(top_pt).clamp(360, my) } else { my };
+    let bottom = if bottom_pt.is_finite() { twips(bottom_pt).clamp(360, 2160) } else { my };
+    let header = (top / 3).clamp(210, 720);
+    let footer = (bottom / 4).clamp(360, 720);
+    (left, right, top, bottom, header, footer)
+}
+
+fn section(page: &Page) -> String {
+    let (pw, ph) = word_page_size(page);
+    let (left, right, top, bottom, header, footer) = page_margins(page);
     format!(
-        "<w:sectPr><w:type w:val=\"nextPage\"/><w:pgSz w:w=\"{pw}\" w:h=\"{ph}\"/><w:pgMar w:top=\"{my}\" w:right=\"{mx}\" w:bottom=\"{my}\" w:left=\"{mx}\" w:header=\"{}\" w:footer=\"{}\" w:gutter=\"0\"/></w:sectPr>",
-        my / 2,
-        my / 2
+        "<w:sectPr><w:type w:val=\"nextPage\"/><w:pgSz w:w=\"{pw}\" w:h=\"{ph}\"/><w:pgMar w:top=\"{top}\" w:right=\"{right}\" w:bottom=\"{bottom}\" w:left=\"{left}\" w:header=\"{header}\" w:footer=\"{footer}\" w:gutter=\"0\"/></w:sectPr>"
     )
 }
 
@@ -693,24 +960,29 @@ pub fn docx(pages: &[Page], title: &str) -> Vec<u8> {
     let mut media: Vec<(String, &Image)> = Vec::new();
     // Word needs a paragraph between adjacent tables and after the last one in the body.
     let mut after_table = false;
-    let run = |b: &Block| run_xml(&b.text, b.size, b.bold, b.italic, b.color);
     let mut shape_id = 0usize;
     for (page_index, page) in pages.iter().enumerate() {
         let (pw, _) = word_page_size(page);
-        let text_w = (pw - 2 * (pw / 8).min(1440)) as f64 / 20.0;
+        let (left, right, _, _, _, _) = page_margins(page);
+        let text_w = (pw - left - right) as f64 / 20.0;
         if positioned(page) {
             body.push_str(&positioned_page(page, &mut media, &mut shape_id));
             after_table = false;
         } else {
             for it in items(std::slice::from_ref(page)) {
                 match &it {
-                    Item::Para(b, lvl) => {
+                    Item::Para(runs, lvl) => {
                         let style = match lvl {
                             1 => "<w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr>",
                             2 => "<w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr>",
                             _ => "",
                         };
-                        body.push_str(&format!("<w:p>{style}{}</w:p>", run(b)));
+                        body.push_str("<w:p>");
+                        body.push_str(style);
+                        for r in runs {
+                            body.push_str(&run_xml(&r.text, r.block.size, r.block.bold, r.block.italic, r.block.color));
+                        }
+                        body.push_str("</w:p>");
                     }
                     Item::Table(t) => {
                         if after_table {
@@ -767,6 +1039,7 @@ xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawin
 <Default Extension=\"png\" ContentType=\"image/png\"/><Default Extension=\"jpg\" ContentType=\"image/jpeg\"/>\
 <Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>\
 <Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>\
+<Override PartName=\"/word/fontTable.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml\"/>\
 <Override PartName=\"/docProps/core.xml\" ContentType=\"application/vnd.openxmlformats-package.core-properties+xml\"/>",
     );
     if page_colour.is_some() {
@@ -780,7 +1053,8 @@ xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawin
 <Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties\" Target=\"docProps/core.xml\"/></Relationships>";
     let mut doc_rels = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\
-<Relationship Id=\"rIdStyles\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>",
+<Relationship Id=\"rIdStyles\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>\
+<Relationship Id=\"rIdFontTable\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable\" Target=\"fontTable.xml\"/>",
     );
     for (i, (name, _)) in media.iter().enumerate() {
         doc_rels.push_str(&format!(
@@ -793,10 +1067,22 @@ xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawin
     }
     doc_rels.push_str("</Relationships>");
     let styles = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\
+<w:docDefaults><w:rPrDefault><w:rPr><w:lang w:bidi=\"th-TH\"/></w:rPr></w:rPrDefault></w:docDefaults>\
 <w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:rPr><w:rFonts w:ascii=\"TH SarabunPSK\" w:hAnsi=\"TH SarabunPSK\" w:cs=\"TH SarabunPSK\" w:eastAsia=\"Leelawadee UI\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr><w:pPr><w:spacing w:after=\"120\"/></w:pPr></w:style>\
 <w:style w:type=\"paragraph\" w:styleId=\"Heading1\"><w:name w:val=\"heading 1\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:pPr><w:keepNext/><w:spacing w:before=\"240\"/><w:outlineLvl w:val=\"0\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"TH SarabunPSK\" w:hAnsi=\"TH SarabunPSK\" w:cs=\"TH SarabunPSK\" w:eastAsia=\"Leelawadee UI\"/><w:b/><w:bCs/><w:sz w:val=\"40\"/><w:szCs w:val=\"40\"/></w:rPr></w:style>\
 <w:style w:type=\"paragraph\" w:styleId=\"Heading2\"><w:name w:val=\"heading 2\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:pPr><w:keepNext/><w:spacing w:before=\"200\"/><w:outlineLvl w:val=\"1\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"TH SarabunPSK\" w:hAnsi=\"TH SarabunPSK\" w:cs=\"TH SarabunPSK\" w:eastAsia=\"Leelawadee UI\"/><w:b/><w:bCs/><w:sz w:val=\"36\"/><w:szCs w:val=\"36\"/></w:rPr></w:style>\
 </w:styles>";
+    let font_table = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
+<w:fonts xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\
+<w:font w:name=\"TH SarabunPSK\"><w:altName w:val=\"Cordia New\"/><w:charset w:val=\"DE\"/><w:family w:val=\"swiss\"/><w:pitch w:val=\"variable\"/></w:font>\
+<w:font w:name=\"TH Sarabun New\"><w:altName w:val=\"Cordia New\"/><w:charset w:val=\"DE\"/><w:family w:val=\"swiss\"/><w:pitch w:val=\"variable\"/></w:font>\
+<w:font w:name=\"Sarabun\"><w:altName w:val=\"Cordia New\"/><w:charset w:val=\"DE\"/><w:family w:val=\"swiss\"/><w:pitch w:val=\"variable\"/></w:font>\
+<w:font w:name=\"Angsana New\"><w:charset w:val=\"DE\"/><w:family w:val=\"swiss\"/><w:pitch w:val=\"variable\"/></w:font>\
+<w:font w:name=\"Cordia New\"><w:charset w:val=\"DE\"/><w:family w:val=\"swiss\"/><w:pitch w:val=\"variable\"/></w:font>\
+<w:font w:name=\"Browallia New\"><w:charset w:val=\"DE\"/><w:family w:val=\"swiss\"/><w:pitch w:val=\"variable\"/></w:font>\
+<w:font w:name=\"Noto Sans Thai\"><w:altName w:val=\"Leelawadee UI\"/><w:charset w:val=\"DE\"/><w:family w:val=\"swiss\"/><w:pitch w:val=\"variable\"/></w:font>\
+<w:font w:name=\"IBM Plex Sans Thai\"><w:altName w:val=\"Leelawadee UI\"/><w:charset w:val=\"DE\"/><w:family w:val=\"swiss\"/><w:pitch w:val=\"variable\"/></w:font>\
+</w:fonts>";
     let core = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>{}</dc:title></cp:coreProperties>",
         esc(title)
@@ -807,6 +1093,7 @@ xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawin
     z.add("docProps/core.xml", core.as_bytes(), true);
     z.add("word/document.xml", doc.as_bytes(), true);
     z.add("word/styles.xml", styles.as_bytes(), true);
+    z.add("word/fontTable.xml", font_table.as_bytes(), true);
     z.add("word/_rels/document.xml.rels", doc_rels.as_bytes(), true);
     if page_colour.is_some() {
         z.add("word/settings.xml", b"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:settings xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:displayBackgroundShape/></w:settings>", true);
@@ -852,7 +1139,11 @@ pub fn rtf(pages: &[Page]) -> String {
     };
     for it in &items {
         match it {
-            Item::Para(b, _) => note(b.color),
+            Item::Para(runs, _) => {
+                for r in runs {
+                    note(r.block.color);
+                }
+            }
             Item::Table(t) => t.rows.iter().flatten().for_each(|c| note(c.color)),
             Item::Img(_) | Item::PageBreak => {}
         }
@@ -872,16 +1163,33 @@ pub fn rtf(pages: &[Page]) -> String {
     }
     for it in items {
         match it {
-            Item::Para(b, _) => {
-                let mut fmt = format!("\\fs{}", (b.size * 2.0).round() as i64);
-                if b.bold {
-                    fmt.push_str("\\b");
+            Item::Para(runs, _) => {
+                if runs.len() == 1 {
+                    let r = &runs[0];
+                    let mut fmt = format!("\\fs{}", (r.block.size * 2.0).round() as i64);
+                    if r.block.bold {
+                        fmt.push_str("\\b");
+                    }
+                    if r.block.italic {
+                        fmt.push_str("\\i");
+                    }
+                    fmt.push_str(&cf(r.block.color));
+                    s.push_str(&format!("{{\\pard{fmt} {}\\par}}\n", rtf_text(&r.text)));
+                } else {
+                    let mut p_str = String::new();
+                    for r in runs {
+                        let mut fmt = format!("\\fs{}", (r.block.size * 2.0).round() as i64);
+                        if r.block.bold {
+                            fmt.push_str("\\b");
+                        }
+                        if r.block.italic {
+                            fmt.push_str("\\i");
+                        }
+                        fmt.push_str(&cf(r.block.color));
+                        p_str.push_str(&format!("{{{fmt} {}}}", rtf_text(&r.text)));
+                    }
+                    s.push_str(&format!("{{\\pard {p_str}\\par}}\n"));
                 }
-                if b.italic {
-                    fmt.push_str("\\i");
-                }
-                fmt.push_str(&cf(b.color));
-                s.push_str(&format!("{{\\pard{fmt} {}\\par}}\n", rtf_text(&b.text)));
             }
             Item::Table(t) => {
                 let mut edges = t.cols.clone();
@@ -951,6 +1259,7 @@ mod tests {
                 rotation: 0.0,
             }],
             background: None,
+            ..Page::default()
         }
     }
 
@@ -984,19 +1293,18 @@ mod tests {
         let p = Page {
             width: 595.0,
             height: 842.0,
-            blocks: vec![
-                Block {
-                    text: "บันทึกข้อความ ภาษาไทย".into(),
-                    rect: [72.0, 700.0, 300.0, 720.0],
-                    size: 16.0,
-                    bold: true,
-                    italic: false,
-                    color: [0.0; 3],
-                    rotation: 0.0,
-                },
-            ],
+            blocks: vec![Block {
+                text: "บันทึกข้อความ ภาษาไทย".into(),
+                rect: [72.0, 700.0, 300.0, 720.0],
+                size: 16.0,
+                bold: true,
+                italic: false,
+                color: [0.0; 3],
+                rotation: 0.0,
+            }],
             images: Vec::new(),
             background: None,
+            ..Page::default()
         };
         let xml = part(&docx(&[p], "Thai Document"), "word/document.xml");
         assert!(xml.contains("TH SarabunPSK"), "Thai font is emitted: {xml}");
@@ -1224,6 +1532,7 @@ mod tests {
             ],
             images: Vec::new(),
             background: None,
+            ..Page::default()
         }
     }
 
@@ -1240,7 +1549,7 @@ mod tests {
         let d = docx(std::slice::from_ref(&p), "Bill");
         assert!(d.starts_with(b"PK"));
         assert!(d.windows(b"word/document.xml".len()).any(|w| w == b"word/document.xml"));
-        let (tables, _) = tables(&p.blocks);
+        let (tables, _) = tables(&p.blocks, &p.highlights, &p.lines);
         assert_eq!(tables.len(), 1);
         let table_xml = docx_table(&tables[0]);
         assert!(table_xml.contains("<w:tblGrid>"));
@@ -1276,7 +1585,7 @@ mod tests {
             })
             .collect();
         let started = std::time::Instant::now();
-        let (tables, _) = tables(&blocks);
+        let (tables, _) = tables(&blocks, &[], &[]);
         assert!(tables.iter().all(|t| t.cols.len() <= MAX_COLS), "{} columns", tables.iter().map(|t| t.cols.len()).max().unwrap_or(0));
         assert!(started.elapsed() < std::time::Duration::from_secs(5), "took {:?}", started.elapsed());
     }
@@ -1305,6 +1614,7 @@ mod tests {
                 .collect(),
             images: Vec::new(),
             background: None,
+            ..Page::default()
         };
         let grid_cols = |p: &Page| part(&docx(std::slice::from_ref(p), "Grid"), "word/document.xml").matches("<w:gridCol ").count();
         assert_eq!(grid_cols(&grid(63)), 63, "63 columns is still a table");
@@ -1340,6 +1650,7 @@ mod tests {
             ],
             images: Vec::new(),
             background: None,
+            ..Page::default()
         };
         let h = html(std::slice::from_ref(&p), "Regulations");
         assert!(!h.contains("<table>"), "running text became a table: {h}");
@@ -1359,7 +1670,7 @@ mod tests {
             blocks.push(block(lead, 72.0, y, 211.0, y + 12.0));
             blocks.push(blue("https://example.org/event", 212.5, y, 360.0, y + 12.0));
         }
-        let p = Page { width: 612.0, height: 792.0, blocks, images: Vec::new(), background: None };
+        let p = Page { width: 612.0, height: 792.0, blocks, images: Vec::new(), background: None, ..Page::default() };
         let h = html(std::slice::from_ref(&p), "Event");
         assert!(!h.contains("<table>"), "sentences became a table: {h}");
         assert_eq!(h.matches("https://example.org/event").count(), 3, "{h}");
@@ -1376,7 +1687,7 @@ mod tests {
             blocks.push(Block { size: 8.0, ..block(sup, 106.0, y + 5.0, 113.0, y + 13.0) });
             blocks.push(block(&format!("{},000", 30 - 5 * n), 300.0, y, 340.0, y + 12.0));
         }
-        let p = Page { width: 612.0, height: 792.0, blocks, images: Vec::new(), background: None };
+        let p = Page { width: 612.0, height: 792.0, blocks, images: Vec::new(), background: None, ..Page::default() };
         let h = html(std::slice::from_ref(&p), "Prizes");
         assert!(h.contains("<table>"), "the prize table was lost: {h}");
         assert!(h.contains("30,000") && h.contains("15,000"), "{h}");
@@ -1404,6 +1715,7 @@ mod tests {
             ],
             images: Vec::new(),
             background: None,
+            ..Page::default()
         };
         let h = html(&[p], "Paper");
         assert!(!h.contains("<table>"), "tall two-column text must stay paragraphs: {h}");

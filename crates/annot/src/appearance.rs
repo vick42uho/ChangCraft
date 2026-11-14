@@ -204,6 +204,18 @@ fn rg_stroke(c: Rgb) -> String {
 
 /// `/DA` of a text box: (text colour, font size). Defaults to black 12 pt.
 pub fn parse_da(d: &Dict) -> (Rgb, f64) {
+    let (col, size, _) = parse_da_full(d);
+    (col, size)
+}
+
+/// `/DA` of a text box: (text colour, font size, font name).
+pub fn parse_da_full(d: &Dict) -> (Rgb, f64, String) {
+    let mut font = String::new();
+    if let Some(f) = d.name(b"PCFont") {
+        font = String::from_utf8_lossy(f).into_owned();
+    } else if let Some(f) = d.name(b"FontName") {
+        font = String::from_utf8_lossy(f).into_owned();
+    }
     let da = d.get(b"DA").and_then(|o| o.as_string()).map(|s| String::from_utf8_lossy(&s.bytes).into_owned()).unwrap_or_default();
     let toks: Vec<&str> = da.split_whitespace().collect();
     let mut col = [0.0; 3];
@@ -225,11 +237,14 @@ pub fn parse_da(d: &Dict) -> (Rgb, f64) {
                 if let Some(s) = num(i - 1).filter(|s| *s > 0.0) {
                     size = s;
                 }
+                if font.is_empty() && i >= 2 {
+                    font = toks[i - 2].trim_start_matches('/').to_string();
+                }
             }
             _ => {}
         }
     }
-    (col.map(|x| x.clamp(0.0, 1.0)), size.min(400.0))
+    (col.map(|x| x.clamp(0.0, 1.0)), size.min(400.0), font)
 }
 
 fn ext_gstate(opacity: f64, multiply: bool) -> Option<Dict> {
@@ -680,7 +695,7 @@ pub fn build(d: &Dict) -> Option<Stream> {
             }
         }
         b"FreeText" => {
-            let (text_color, size) = parse_da(d);
+            let (text_color, size, font_name) = parse_da_full(d);
             let bg = stroke;
             let bw = if d.contains(b"BS") || d.contains(b"Border") { border_width(d) } else { 0.0 };
             // A callout: the leader line (arrowhead at its first point), and the text box inside
@@ -751,13 +766,14 @@ pub fn build(d: &Dict) -> Option<Stream> {
             let q = d.int(b"Q").unwrap_or(0);
             if text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')) && pdfcraft_fonts::document_thai_font().is_some() {
                 c.push_str(&rg(text_color));
+                let script = pdfcraft_fonts::thai_script_for_name(&font_name);
                 // Lower baseline slightly to guarantee top marks like ธิ์ in บุญฤทธิ์ are never clipped
                 let mut y = rect[3] - pad - size * 1.0;
                 for line in text.split('\n') {
                     if y < rect[1] - size {
                         break;
                     }
-                    if let Ok(clusters) = pdfcraft_fonts::shape_thai(line) {
+                    if let Ok(clusters) = pdfcraft_fonts::shape_script(line, false, script) {
                         let total_w: f64 = clusters.iter().map(|cl| cl.advance * size).sum();
                         let mut cur_x = match q {
                             1 => rect[0] + pad + (width - total_w) / 2.0,
@@ -766,7 +782,7 @@ pub fn build(d: &Dict) -> Option<Stream> {
                         };
                         for cluster in clusters {
                             for (gid, pos) in &cluster.glyphs {
-                                if let Ok(outline) = pdfcraft_fonts::shaped_glyph(pdfcraft_fonts::ShapedScript::Thai, *gid) {
+                                if let Ok(outline) = pdfcraft_fonts::shaped_glyph(script, *gid) {
                                     let gx = cur_x + pos[0] * size;
                                     let gy = y + pos[1] * size;
                                     let mut has_points = false;

@@ -61,6 +61,8 @@ struct Flatten {
     /// Horizontal shear applied to every point (x += slant × y), for slanted fallback glyphs.
     slant: f64,
     dx: f64,
+    /// Vertical offset added to every point (a shaped mark's y offset), in em units.
+    dy: f64,
     points: usize,
     too_complex: bool,
     max_points: usize,
@@ -68,11 +70,11 @@ struct Flatten {
 
 impl Flatten {
     fn new(scale: f64) -> Self {
-        Self { contours: Vec::new(), cur: Vec::new(), scale, slant: 0.0, dx: 0.0, points: 0, too_complex: false, max_points: 4096 }
+        Self { contours: Vec::new(), cur: Vec::new(), scale, slant: 0.0, dx: 0.0, dy: 0.0, points: 0, too_complex: false, max_points: 4096 }
     }
 
     fn pt(&self, x: f32, y: f32) -> [f64; 2] {
-        let (x, y) = (x as f64 * self.scale, y as f64 * self.scale);
+        let (x, y) = (x as f64 * self.scale, y as f64 * self.scale + self.dy);
         [self.dx + x + self.slant * y, y]
     }
 
@@ -199,7 +201,133 @@ pub fn script_missing(text: &str) -> Option<char> {
     let charmap = font.charmap();
     let fallback = FontRef::new(INTER_REGULAR).ok();
     let fallback_map = fallback.as_ref().map(|f| f.charmap());
-    text.chars().find(|c| !c.is_whitespace() && charmap.map(*c).is_none() && fallback_map.as_ref().and_then(|m| m.map(*c)).is_none())
+    let thai = thai_signature_face().is_some();
+    text.chars().find(|c| {
+        !c.is_whitespace()
+            && !(thai && is_thai(*c))
+            && charmap.map(*c).is_none()
+            && fallback_map.as_ref().and_then(|m| m.map(*c)).is_none()
+    })
+}
+
+/// Thai script block (U+0E00–U+0E7F).
+fn is_thai(c: char) -> bool {
+    matches!(u32::from(c), 0x0E00..=0x0E7F)
+}
+
+/// The approved Thai face typed signatures draw Thai with (Dancing Script and Inter have no
+/// Thai): Charmonman (calligraphic Thai script) when craft-fonts has it, else Sarabun Italic, else
+/// the first Thai document face. Returns the face and the synthetic italic slant to apply.
+fn thai_signature_face() -> Option<(&'static crate::CraftFont, f64)> {
+    for family in ["Charmonman", "Charm"] {
+        if let Some(face) = crate::document_thai_font_named(family) {
+            return Some((face, FALLBACK_SLANT));
+        }
+    }
+    if let Some(face) = crate::embedding::matching_faces_exact_style("Sarabun", false, true).into_iter().find(|f| f.covers("Thai")) {
+        return Some((face, 0.0));
+    }
+    crate::document_thai_font().map(|f| (f, FALLBACK_SLANT))
+}
+
+/// Draw one run of Thai `text`, shaped (marks stacked above and below their consonant), into
+/// `pen` at its current position. `cap`: the script's capital height in em, which the Thai
+/// consonants are scaled to. Returns false when the run could not be drawn.
+fn draw_thai_run(pen: &mut Flatten, text: &str, cap: f64) -> bool {
+    let Some((face, slant)) = thai_signature_face() else { return false };
+    let Ok(font) = FontRef::new(face.bytes) else { return false };
+    let Ok(run) = crate::source_shaping::shape(face.bytes, text) else { return false };
+    let loc = LocationRef::default();
+    let metrics = font.metrics(Size::unscaled(), loc);
+    let em = 1.0 / metrics.units_per_em.max(1) as f64;
+    // Thai consonants stand at about the x-height: make them as tall as the script's capitals,
+    // a little shorter, so a Thai name reads at the same size as a Latin one.
+    let own = metrics.x_height.filter(|h| *h > 0.0).map(|h| h as f64 * em).unwrap_or(0.5);
+    let ratio = if cap > 0.0 && own > 0.0 { (cap * 0.9 / own).clamp(0.5, 2.5) } else { 1.0 };
+    let outlines = font.outline_glyphs();
+    let start = pen.dx;
+    for g in &run.glyphs {
+        (pen.scale, pen.slant) = (em * ratio, slant);
+        pen.dx = start + g.position[0] * ratio;
+        pen.dy = g.position[1] * ratio;
+        if let Some(outline) = outlines.get(g.id) {
+            let _ = outline.draw(DrawSettings::unhinted(Size::unscaled(), loc), pen);
+            pen.close();
+        }
+    }
+    pen.dy = 0.0;
+    pen.dx = start + run.advance * ratio;
+    true
+}
+
+/// Append a delicate tapered calligraphic pen flourish below `contours` for signed Thai names.
+/// Returns the lowest y reached so `ScriptOutline::descent` can expand cleanly when needed.
+fn add_thai_signature_flourish(contours: &mut Vec<Vec<[f64; 2]>>, width: f64) -> Option<f64> {
+    let min_y = contours.iter().flatten().map(|p| p[1]).filter(|y| y.is_finite()).fold(f64::INFINITY, f64::min);
+    if !min_y.is_finite() || !width.is_finite() {
+        return None;
+    }
+    let x0 = width * 0.08;
+    let x1 = (width * 0.96).min(width + 0.12);
+    let span = x1 - x0;
+    if span < 0.25 {
+        return None;
+    }
+    let clearance = min_y.min(0.0) - 0.075;
+    let p0 = [x0, clearance - 0.015];
+    let p1 = [x0 + span * 0.32, clearance - 0.045];
+    let p2 = [x0 + span * 0.72, clearance + 0.015];
+    let p3 = [x1, clearance + 0.060];
+    let point = |t: f64| -> [f64; 2] {
+        let u = 1.0 - t;
+        let b0 = u * u * u;
+        let b1 = 3.0 * u * u * t;
+        let b2 = 3.0 * u * t * t;
+        let b3 = t * t * t;
+        [
+            b0 * p0[0] + b1 * p1[0] + b2 * p2[0] + b3 * p3[0],
+            b0 * p0[1] + b1 * p1[1] + b2 * p2[1] + b3 * p3[1],
+        ]
+    };
+    let tangent = |t: f64| -> [f64; 2] {
+        let u = 1.0 - t;
+        let q0 = [p1[0] - p0[0], p1[1] - p0[1]];
+        let q1 = [p2[0] - p1[0], p2[1] - p1[1]];
+        let q2 = [p3[0] - p2[0], p3[1] - p2[1]];
+        let dx = 3.0 * (u * u * q0[0] + 2.0 * u * t * q1[0] + t * t * q2[0]);
+        let dy = 3.0 * (u * u * q0[1] + 2.0 * u * t * q1[1] + t * t * q2[1]);
+        let len = dx.hypot(dy).max(1e-9);
+        [dx / len, dy / len]
+    };
+    // Fountain-pen stroke half-width: crisp entry, fuller early arch, delicate upward taper.
+    let half_w = |t: f64| -> f64 {
+        let arch = (t * std::f64::consts::PI).sin().max(0.0);
+        let bias = (1.0 - 0.45 * t).max(0.2);
+        0.002 + 0.012 * arch * bias
+    };
+    const STEPS: usize = 16;
+    let mut ring = Vec::with_capacity((STEPS + 1) * 2);
+    let mut lowest = f64::INFINITY;
+    for i in 0..=STEPS {
+        let t = i as f64 / STEPS as f64;
+        let c = point(t);
+        let [tx, ty] = tangent(t);
+        let hw = half_w(t);
+        let pt = [c[0] - ty * hw, c[1] + tx * hw];
+        lowest = lowest.min(pt[1]);
+        ring.push(pt);
+    }
+    for i in (0..=STEPS).rev() {
+        let t = i as f64 / STEPS as f64;
+        let c = point(t);
+        let [tx, ty] = tangent(t);
+        let hw = half_w(t);
+        let pt = [c[0] + ty * hw, c[1] - tx * hw];
+        lowest = lowest.min(pt[1]);
+        ring.push(pt);
+    }
+    contours.push(ring);
+    lowest.is_finite().then_some(lowest)
 }
 
 /// The outlines of `text` in the script font. Characters it lacks (Cyrillic, Greek, …) are drawn
@@ -232,7 +360,23 @@ pub fn script_outline(text: &str) -> ScriptOutline {
     // The 4096-point budget is for one untrusted document glyph (japanese_glyph), not a
     // whole signature in our bundled font. Keep a separate bounded budget for the line.
     pen.max_points = 262_144;
-    for ch in text.chars() {
+    let cap = metrics.cap_height.map(|h| h as f64 * scale).filter(|h| *h > 0.0).unwrap_or(0.7);
+    let mut thai_run = String::new();
+    let mut thai_chars = 0usize;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        // Thai is shaped as a run, from the Thai face: its vowels and tone marks stack.
+        if is_thai(ch) && thai_signature_face().is_some() {
+            thai_run.push(ch);
+            if chars.peek().is_some_and(|c| is_thai(*c)) {
+                continue;
+            }
+            if draw_thai_run(&mut pen, &thai_run, cap) {
+                thai_chars += thai_run.chars().filter(|c| !c.is_whitespace()).count();
+            }
+            thai_run.clear();
+            continue;
+        }
         if let Some(gid) = charmap.map(ch) {
             (pen.scale, pen.slant) = (scale, 0.0);
             if let Some(g) = glyphs.get(gid) {
@@ -255,7 +399,13 @@ pub fn script_outline(text: &str) -> ScriptOutline {
     if pen.too_complex {
         return ScriptOutline::default();
     }
-    ScriptOutline { contours: pen.contours, width: pen.dx, ascent: metrics.ascent as f64 * scale, descent: metrics.descent as f64 * scale }
+    let mut descent = metrics.descent as f64 * scale;
+    if thai_chars >= 2
+        && let Some(flourish_min_y) = add_thai_signature_flourish(&mut pen.contours, pen.dx)
+    {
+        descent = descent.min(flourish_min_y);
+    }
+    ScriptOutline { contours: pen.contours, width: pen.dx, ascent: metrics.ascent as f64 * scale, descent }
 }
 
 #[cfg(test)]
@@ -331,5 +481,42 @@ mod tests {
             assert!(!g.contours.is_empty());
         }
         assert_eq!(super::japanese_glyph('\u{1f4a9}'), Err(super::GlyphError::Missing));
+    }
+
+    #[test]
+    fn thai_signature_outlines_shape_marks_when_craft_fonts_are_bundled() {
+        if crate::document_thai_font().is_none() {
+            eprintln!("skipping Thai signature check: built without craft-fonts (set CRAFT_FONTS_DIR)");
+            return;
+        }
+        assert!(super::script_missing("สมชาย กรุงเทพ").is_none());
+        let thai_only = super::script_outline("สมชาย");
+        assert!(thai_only.width > 0.0);
+        assert!(!thai_only.contours.is_empty());
+        let mixed = super::script_outline("สมชาย Wick");
+        assert!(mixed.width > thai_only.width);
+        assert!(mixed.contours.len() > thai_only.contours.len());
+    }
+
+    #[test]
+    fn thai_signature_prefers_calligraphic_charmonman_and_keeps_sarabun_for_documents() {
+        let Some((face, slant)) = super::thai_signature_face() else {
+            eprintln!("skipping Charmonman signature check: built without craft-fonts (set CRAFT_FONTS_DIR)");
+            return;
+        };
+        if crate::document_thai_font_named("Charmonman").is_some() {
+            assert_eq!(face.family, "Charmonman");
+            assert!(slant > 0.0, "calligraphic signature gets forward cursive slant");
+            assert_eq!(crate::document_thai_font().map(|f| f.family), Some("Sarabun"));
+            assert_eq!(crate::ui_thai_fonts().first().map(|f| f.family), Some("Sarabun"));
+            let signed = super::script_outline("นพ. สมชาย ใจดี");
+            assert!(!signed.contours.is_empty());
+            assert!(signed.contours.iter().flatten().all(|p| p[0].is_finite() && p[1].is_finite()));
+            let b = signed.bounds();
+            assert!(b[2] > b[0] && b[3] > b[1], "valid signature bounds: {b:?}");
+            // With Charmonman + flourish on 2+ Thai characters, a single Thai char does not draw an underline flourish.
+            let single = super::script_outline("ก");
+            assert!(signed.contours.len() > single.contours.len());
+        }
     }
 }

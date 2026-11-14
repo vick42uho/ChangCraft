@@ -570,11 +570,13 @@ pub struct Style {
     pub width: f64,
     /// Interior fill for rectangles and ovals (`/IC`), background for text boxes.
     pub fill: Option<Rgb>,
+    /// Font name for text boxes and typewriter annotations (e.g. "Sarabun", "IBMPlexSansThai").
+    pub font: Option<String>,
 }
 
 impl Default for Style {
     fn default() -> Self {
-        Self { color: [1.0, 0.82, 0.0], opacity: 1.0, width: 1.0, fill: None }
+        Self { color: [1.0, 0.82, 0.0], opacity: 1.0, width: 1.0, fill: None, font: None }
     }
 }
 
@@ -600,9 +602,9 @@ impl Style {
             Shape::CustomStamp { .. } => ([0.0, 0.0, 0.0], 0.0),
             Shape::TypedSignature { .. } => ([0.0, 0.0, 0.0], 0.0),
             // Red outline while marked; a black box once applied.
-            Shape::Redact { .. } => return Self { color: [0.89, 0.13, 0.13], opacity: 1.0, width: 1.0, fill: Some([0.0, 0.0, 0.0]) },
+            Shape::Redact { .. } => return Self { color: [0.89, 0.13, 0.13], opacity: 1.0, width: 1.0, fill: Some([0.0, 0.0, 0.0]), font: None },
         };
-        Self { color, opacity: 1.0, width, fill: None }
+        Self { color, opacity: 1.0, width, fill: None, font: None }
     }
 }
 
@@ -1262,7 +1264,12 @@ pub fn add_annotation(doc: &mut Document, new: &NewAnnotation, meta: &Meta) -> R
             }
             let size = if font_size.is_finite() && *font_size > 0.0 { font_size.clamp(1.0, 400.0) } else { 12.0 };
             let [r, g, b] = style.color.map(|x| x.clamp(0.0, 1.0));
-            d.set(b"DA".to_vec(), PdfString::literal(format!("{} {} {} rg /Helv {} Tf", n(r), n(g), n(b), n(size)).into_bytes()));
+            let font_name = style.font.as_deref().unwrap_or("Helv");
+            let font_token = font_name.replace(' ', "");
+            d.set(b"DA".to_vec(), PdfString::literal(format!("{} {} {} rg /{} {} Tf", n(r), n(g), n(b), font_token, n(size)).into_bytes()));
+            if let Some(font_name) = &style.font {
+                d.set(b"PCFont".to_vec(), Object::name(font_name));
+            }
             d.set(b"Q".to_vec(), Object::Int(0));
             if let Some(f) = style.fill {
                 d.set(b"C".to_vec(), rgb(f));
@@ -2072,24 +2079,31 @@ pub fn set_style(
     redraw_or_restore(doc, r, before)
 }
 
-/// Change the font size of a text box, typewriter text or callout (`/DA` keeps its colour; the
+/// Change the font size or font family of a text box, typewriter text or callout (`/DA` keeps its colour; the
 /// rich-text strings follow) and redraw it. The box grows to hold the wrapped text at the new
 /// size and never shrinks, so a box the user drew large stays large. Sizes are 1 to 400 pt.
-pub fn set_font_size(doc: &mut Document, page: usize, index: usize, size: f64, meta: &Meta) -> Result<(), AnnotError> {
+pub fn set_font(doc: &mut Document, page: usize, index: usize, font: Option<&str>, size: Option<f64>, meta: &Meta) -> Result<(), AnnotError> {
     let (_, r) = annot_ref(doc, page, index)?;
     unlocked(doc, r)?;
     let d = annot_dict(doc, r);
     if d.name(b"Subtype") != Some(b"FreeText") {
         return Err(AnnotError::Invalid("only text boxes, typewriter text and callouts have a font size".into()));
     }
-    if !size.is_finite() || !(1.0..=400.0).contains(&size) {
+    if let Some(s) = size && (!s.is_finite() || !(1.0..=400.0).contains(&s)) {
         return Err(AnnotError::Invalid("font size must be 1\u{2013}400 pt".into()));
     }
     refuse_foreign_text(doc, &d)?;
     let before = d;
     doc.update_dict(r, |d| {
-        let (col, _) = appearance::parse_da(d);
-        d.set(b"DA".to_vec(), PdfString::literal(format!("{} {} {} rg /Helv {} Tf", n(col[0]), n(col[1]), n(col[2]), n(size)).into_bytes()));
+        let (col, cur_size, cur_font) = appearance::parse_da_full(d);
+        let s = size.unwrap_or(cur_size);
+        let f = font.unwrap_or(&cur_font);
+        let f_clean = if f.is_empty() { "Helv" } else { f };
+        let f_token = f_clean.replace(' ', "");
+        d.set(b"DA".to_vec(), PdfString::literal(format!("{} {} {} rg /{} {} Tf", n(col[0]), n(col[1]), n(col[2]), f_token, n(s)).into_bytes()));
+        if let Some(font_name) = font {
+            d.set(b"PCFont".to_vec(), Object::name(font_name));
+        }
         rich_text(d);
         touch(d, meta);
     })?;
@@ -2111,6 +2125,14 @@ pub fn set_font_size(doc: &mut Document, page: usize, index: usize, size: f64, m
         doc.set(r, Object::Dict(before));
     }
     result
+}
+
+pub fn set_font_size(doc: &mut Document, page: usize, index: usize, size: f64, meta: &Meta) -> Result<(), AnnotError> {
+    set_font(doc, page, index, None, Some(size), meta)
+}
+
+pub fn set_font_family(doc: &mut Document, page: usize, index: usize, font: &str, meta: &Meta) -> Result<(), AnnotError> {
+    set_font(doc, page, index, Some(font), None, meta)
 }
 
 /// Whether a comment has a fill: `/IC` for shapes, `/C` for FreeText (§12.5.6).
@@ -2363,6 +2385,8 @@ pub struct Props {
     pub fill: Option<Rgb>,
     /// Text boxes, typewriter text and callouts: the `/DA` font size in points.
     pub font_size: Option<f64>,
+    /// Text boxes, typewriter text and callouts: the font family name.
+    pub font_family: Option<String>,
 }
 
 /// The current properties of the comment at `(page, index)`.
@@ -2394,6 +2418,7 @@ pub fn props(doc: &Document, page: usize, index: usize) -> Option<Props> {
         fillable: fillable(&subtype),
         fill: fill_of(d),
         font_size: (subtype == "FreeText").then(|| appearance::parse_da(d).1),
+        font_family: (subtype == "FreeText").then(|| appearance::parse_da_full(d).2),
         subtype,
         endings: line_endings_of(d),
     })

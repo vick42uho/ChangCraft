@@ -287,6 +287,15 @@ pub fn installed_font_definitions(cjk: CjkPreference) -> FontDefinitions {
                 stack.insert(at.unwrap_or(stack.len()), SYSTEM_FALLBACK.to_owned());
             }
         }
+        for fam in ["Angsana New", "Cordia New", "Browallia New"] {
+            if let Some(data) = crate::system_fonts::system_thai_named_font(fam) {
+                let font_key = format!("{fam}-System");
+                fonts.font_data.insert(font_key.clone(), data);
+                let mut stack = vec![font_key];
+                stack.extend(fonts.families[&FontFamily::Proportional].clone());
+                fonts.families.insert(FontFamily::Name((*fam).into()), stack);
+            }
+        }
     }
     fonts
 }
@@ -417,6 +426,15 @@ fn font_definitions_for_platform(prefer_hans: bool, platform: FontPolicyPlatform
         let mut stack = vec![primary.to_owned()];
         stack.extend(fallback.iter().cloned());
         fonts.families.insert(FontFamily::Name(fam.into()), stack);
+    }
+    for face in pdfcraft_fonts::ui_thai_fonts() {
+        let name = face.name();
+        let mut stack = vec![name.clone()];
+        stack.extend(fallback.iter().cloned());
+        fonts.families.insert(FontFamily::Name(face.family.into()), stack);
+    }
+    for fam in ["Angsana New", "Cordia New", "Browallia New"] {
+        fonts.families.insert(FontFamily::Name((*fam).into()), fallback.clone());
     }
     fonts
 }

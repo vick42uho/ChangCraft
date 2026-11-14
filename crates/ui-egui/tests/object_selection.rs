@@ -390,3 +390,218 @@ fn modifier_selection_picks_foreground_text_and_added_items_over_background_artw
         assert!(new.rect.iter().enumerate().all(|(i, value)| (value - old.rect[i] - shift[i % 2]).abs() < 0.01), "{old:?} -> {new:?}");
     }
 }
+
+fn two_page_text_pdf() -> Vec<u8> {
+    let objs: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".into(),
+        "<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 /MediaBox [0 0 200 300] >>".into(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into(),
+        "<< /Type /Page /Parent 2 0 R /Contents 5 0 R /Resources << /Font << /F1 3 0 R >> >> >>".into(),
+        {
+            let b = "BT /F1 18 Tf 40 200 Td (First Page) Tj ET";
+            format!("<< /Length {} >>\nstream\n{b}\nendstream", b.len())
+        },
+        "<< /Type /Page /Parent 2 0 R /Contents 7 0 R /Resources << /Font << /F1 3 0 R >> >> >>".into(),
+        {
+            let b = "BT /F1 18 Tf 40 200 Td (Second Page) Tj ET";
+            format!("<< /Length {} >>\nstream\n{b}\nendstream", b.len())
+        },
+    ];
+    let mut out = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, o) in objs.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n{o}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
+    for o in offsets {
+        out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
+    out
+}
+
+fn page_center_for(h: &Harness<'static, PdfCraftApp>, page: usize, rect: [f64; 4]) -> Pos2 {
+    let app = h.state();
+    let doc = app.session.get(app.views[0].id).unwrap();
+    pdfcraft_ui_egui::canvas::PageXform {
+        rect: app.views[0].page_screen_rect(page).expect("page on screen"),
+        rot: 0,
+        pw: doc.info.pages[page].width,
+        ph: doc.info.pages[page].height,
+    }
+    .user_rect(&doc.info, page, rect.map(|v| v as f32))
+    .center()
+}
+
+#[test]
+fn pasted_object_drag_moves_freely_across_pages_and_when_source_scrolls_offscreen() {
+    let mut h = Harness::builder().with_size(egui::vec2(1200.0, 900.0)).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("two.pdf", None, two_page_text_pdf()).expect("two-page fixture opens");
+        app.set_option("zoom", "50").unwrap();
+        app.set_option("continuous", "on").unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.run_steps(2);
+
+    // Select "First Page" with Shift+Click, then Copy + Paste to get an editable pasted object.
+    let src_rect = {
+        let app = h.state();
+        app.session.get(app.views[0].id).unwrap().editable_objects(0).unwrap()[0].rect
+    };
+    let p0_obj = page_center_for(&h, 0, src_rect);
+    click(&mut h, p0_obj, Modifiers::SHIFT);
+    h.get_by_label("1 object selected");
+    assert!(h.state_mut().execute("edit.copy"));
+    assert!(h.state_mut().execute("edit.paste"));
+    h.run_steps(4);
+
+    let p0_objs = {
+        let app = h.state();
+        app.session.get(app.views[0].id).unwrap().editable_objects(0).unwrap()
+    };
+    assert_eq!(p0_objs.len(), 2, "paste adds a second object on page 0");
+    let pasted = p0_objs.last().unwrap().clone();
+    // Ensure the pasted object is selected and drag it downward onto page 1.
+    let pasted_pos = page_center_for(&h, 0, pasted.rect);
+    let page1_screen = h.state().views[0].page_screen_rect(1).expect("page 1 visible at 50% zoom");
+    let drop_on_p1 = page1_screen.center() - egui::vec2(0.0, 40.0);
+    drag(&mut h, pasted_pos, drop_on_p1);
+
+    let (c0, c1, moved_rect) = {
+        let app = h.state();
+        let doc = app.session.get(app.views[0].id).unwrap();
+        let o0 = doc.editable_objects(0).unwrap();
+        let o1 = doc.editable_objects(1).unwrap();
+        (o0.len(), o1.len(), o1.iter().find(|o| o.text.as_deref() == Some("First Page")).map(|o| o.rect))
+    };
+    assert_eq!(c0, 1, "pasted object left page 0");
+    assert_eq!(c1, 2, "pasted object landed on page 1");
+    let moved_rect = moved_rect.expect("moved copy is on page 1");
+
+    // Drag the moved object back upward from page 1 to page 0.
+    let on_p1 = page_center_for(&h, 1, moved_rect);
+    let page0_screen = h.state().views[0].page_screen_rect(0).expect("page 0 visible at 50% zoom");
+    let drop_on_p0 = page0_screen.center() + egui::vec2(0.0, 30.0);
+    drag(&mut h, on_p1, drop_on_p0);
+
+    let (c0, c1, back_rect) = {
+        let app = h.state();
+        let doc = app.session.get(app.views[0].id).unwrap();
+        let o0 = doc.editable_objects(0).unwrap();
+        let o1 = doc.editable_objects(1).unwrap();
+        (o0.len(), o1.len(), o0.last().map(|o| o.rect))
+    };
+    assert_eq!(c0, 2, "moved object returned to page 0");
+    assert_eq!(c1, 1, "page 1 back to 1 object");
+
+    // Zoom in so page 0 scrolls offscreen mid-drag, start dragging on page 0,
+    // scroll down to page 1 mid-drag, verify page 0 scrolled offscreen while drag survives, and drop onto page 1.
+    assert!(h.state_mut().set_option("zoom", "220").is_ok());
+    h.state_mut().views[0].goto = Some((0, 0.0));
+    h.run_steps(4);
+    let start = page_center_for(&h, 0, back_rect.unwrap());
+    h.hover_at(start);
+    h.run_steps(2);
+    h.drag_at(start);
+    h.run_steps(2);
+    h.hover_at(start + egui::vec2(0.0, 12.0));
+    h.run_steps(2);
+    h.state_mut().views[0].goto = Some((1, 0.4));
+    h.run_steps(4);
+    assert!(h.state().views[0].page_screen_rect(0).is_some_and(|r| r.bottom() < 0.0), "source page scrolled offscreen mid-drag");
+    let p1_vis = h.state().views[0].page_screen_rect(1).expect("page 1 visible after scroll");
+    let dst = p1_vis.center();
+    h.hover_at(dst);
+    h.run_steps(2);
+    h.drop_at(dst);
+    h.run_steps(4);
+
+    let app = h.state();
+    let doc = app.session.get(app.views[0].id).unwrap();
+    assert_eq!(doc.editable_objects(0).unwrap().len(), 1, "object moved after offscreen scroll");
+    assert_eq!(doc.editable_objects(1).unwrap().len(), 2, "object landed on page 1 after offscreen scroll");
+}
+
+#[test]
+fn moving_actual_text_and_cropped_image_in_object_selection_succeeds() {
+    let mut h = harness();
+    let id = h.state().views[0].id;
+    let img_rect = objects(&h).into_iter().find(|o| o.target.kind == pdfcraft_engine::ObjectKind::Image).unwrap().rect;
+    let crop = [img_rect[0] + 6.0, img_rect[1] + 4.0, img_rect[2] - 6.0, img_rect[3] - 4.0];
+    h.state_mut().session.apply(id, Edit::EditPageImage { page: 0, index: 0, change: pdfcraft_engine::ImageEdit::Crop(crop) }).unwrap();
+    h.run_steps(4);
+
+    let cropped = objects(&h).into_iter().find(|o| o.target.kind == pdfcraft_engine::ObjectKind::Image).unwrap();
+    let headline = objects(&h).into_iter().find(|o| o.text.as_deref() == Some("Group headline")).unwrap();
+    let headline_pos = page_center_for(&h, 0, headline.rect);
+    click(&mut h, headline_pos, Modifiers::SHIFT);
+    let cropped_pos = page_center_for(&h, 0, cropped.rect);
+    click(&mut h, cropped_pos, Modifiers::SHIFT);
+    h.get_by_label("2 objects selected");
+
+    let start = page_center_for(&h, 0, cropped.rect);
+    let end = start + egui::vec2(25.0, 20.0);
+    drag(&mut h, start, end);
+
+    assert!(h.query_by_label_contains("could not be moved").is_none(), "cropped image + text group move renders no failure notice");
+    assert_eq!(h.state().toast, None, "cropped image + text group move succeeds without toast notice");
+    let after = objects(&h);
+    let cropped_after = after.into_iter().find(|o| o.target.kind == pdfcraft_engine::ObjectKind::Image).unwrap();
+    assert!(
+        cropped_after.rect[0] > cropped.rect[0] + 5.0 && cropped_after.rect[1] < cropped.rect[1] - 5.0,
+        "{:?} -> {:?}",
+        cropped.rect,
+        cropped_after.rect
+    );
+}
+
+#[test]
+fn dragging_near_interior_viewport_edge_does_not_scroll_viewport() {
+    let mut h = harness();
+    let before = objects(&h);
+    let target = before.iter().find(|o| o.text.as_deref() == Some("Keep here")).unwrap().clone();
+    assert!(h.state_mut().set_option("zoom", "300").is_ok());
+    h.state_mut().views[0].goto = Some((0, 0.7));
+    h.run_steps(4);
+
+    let r_before = h.state().views[0].page_screen_rect(0).expect("page 0 visible");
+    let viewport = h.state().views[0].viewport_rect();
+    let start = page_center_for(&h, 0, target.rect);
+    assert!(viewport.contains(start), "target {start:?} must be inside viewport {viewport:?}");
+
+    h.hover_at(start);
+    h.run_steps(2);
+    h.drag_at(start);
+    h.run_steps(2);
+    h.hover_at(start + egui::vec2(6.0, 4.0));
+    h.run_steps(2);
+
+    // Move inside the 32px interior edge band of the viewport (12px from bottom-right edges) and
+    // hold for several frames: viewport position must stay fixed without edge-scroll jitter.
+    let near_interior_edge = Pos2::new(viewport.right() - 12.0, viewport.bottom() - 12.0);
+    for _ in 0..8 {
+        h.hover_at(near_interior_edge);
+        h.run_steps(1);
+    }
+    let r_during = h.state().views[0].page_screen_rect(0).expect("page 0 still visible");
+    assert!(
+        (r_during.min.x - r_before.min.x).abs() < 0.5 && (r_during.min.y - r_before.min.y).abs() < 0.5,
+        "unexpected edge-scroll: {r_before:?} -> {r_during:?}"
+    );
+
+    let end = start + egui::vec2(24.0, 18.0);
+    h.hover_at(end);
+    h.run_steps(2);
+    h.drop_at(end);
+    h.run_steps(4);
+
+    let after = objects(&h);
+    let moved = after.iter().find(|o| o.target == target.target).unwrap();
+    assert!(moved.rect[0] > target.rect[0] + 3.0 && moved.rect[1] < target.rect[1] - 2.0, "{:?} -> {:?}", target.rect, moved.rect);
+}

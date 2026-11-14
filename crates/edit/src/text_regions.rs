@@ -66,7 +66,11 @@ pub(super) fn is_centred(block: &TextBlock, lines: &[TextLine], page_centre: f64
 }
 
 pub(super) fn group_blocks(lines: &[TextLine]) -> Vec<TextBlock> {
-    group_layout(lines, true)
+    group_blocks_with_rules(lines, &[])
+}
+
+pub(super) fn group_blocks_with_rules(lines: &[TextLine], rules: &[[f64; 4]]) -> Vec<TextBlock> {
+    group_layout(lines, true, rules)
 }
 
 /// Exporters currently represent a block with one style. Keep their style boundaries until
@@ -92,16 +96,16 @@ pub(super) fn group_reading_blocks(lines: &[TextLine]) -> Vec<TextBlock> {
         {
             // Tab leaders are a single reading row, even when the title, dots and page
             // number are separate text objects far apart. Do not merge neighbouring entries.
-            blocks.extend(group_layout(lines.get(start..offset).unwrap_or_default(), false));
+            blocks.extend(group_layout(lines.get(start..offset).unwrap_or_default(), false, &[]));
             let mut line = first.clone();
             line.text = text;
             line.rect = row.iter().map(|line| line.rect).reduce(union).unwrap_or(first.rect);
-            blocks.extend(group_layout(std::slice::from_ref(&line), false));
+            blocks.extend(group_layout(std::slice::from_ref(&line), false, &[]));
             start = offset + row.len();
         }
         offset += row.len();
     }
-    blocks.extend(group_layout(lines.get(start..).unwrap_or_default(), false));
+    blocks.extend(group_layout(lines.get(start..).unwrap_or_default(), false, &[]));
     blocks
 }
 
@@ -188,7 +192,72 @@ fn starts_list_item(row: &[usize], lines: &[TextLine]) -> bool {
     row.iter().filter_map(|i| lines.get(*i)).map(|l| l.text.trim_start()).find(|t| !t.is_empty()).is_some_and(opens_with_marker)
 }
 
-fn group_layout(lines: &[TextLine], mixed: bool) -> Vec<TextBlock> {
+/// Transforms rectangle `[min_x, min_y, max_x, max_y]` into `line`'s plane coordinate system.
+fn rect_in_plane(line: &TextLine, r: [f64; 4]) -> [f64; 4] {
+    let dir = line.direction();
+    let to_plane = |x: f64, y: f64| -> (f64, f64) { to_frame(dir, (x, y)) };
+    let pts = [to_plane(r[0], r[1]), to_plane(r[2], r[1]), to_plane(r[2], r[3]), to_plane(r[0], r[3])];
+    let min_x = pts.iter().map(|p| p.0).fold(f64::MAX, f64::min);
+    let min_y = pts.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+    let max_x = pts.iter().map(|p| p.0).fold(f64::MIN, f64::max);
+    let max_y = pts.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+    [min_x, min_y, max_x, max_y]
+}
+
+/// Whether a vector rule (table column border) runs vertically between `prev` (left) and `next`
+/// (right) across their row band.
+fn crosses_vertical_rule(prev: &TextLine, next: &TextLine, rules: &[[f64; 4]]) -> bool {
+    if rules.is_empty() {
+        return false;
+    }
+    let pr = prev.frame_rect();
+    let nr = next.frame_rect();
+    let y_min = pr[1].min(nr[1]);
+    let y_max = pr[3].max(nr[3]);
+    let y_span = (pr[3] - pr[1]).min(nr[3] - nr[1]).max(1.0);
+    rules.iter().any(|&r| {
+        let rr = rect_in_plane(prev, r);
+        let thickness = (rr[2] - rr[0]).abs();
+        let length = (rr[3] - rr[1]).abs();
+        if thickness > 2.5 || length < 4.0 {
+            return false;
+        }
+        let rx = (rr[0] + rr[2]) * 0.5;
+        let between = rx >= pr[2] - 2.0 && rx <= nr[0] + 2.0 && rx > pr[0] + 1.0 && rx < nr[2] - 1.0;
+        let overlap = rr[3].min(y_max) - rr[1].max(y_min);
+        between && overlap >= y_span * 0.35
+    })
+}
+
+/// Whether a vector rule (table border or horizontal divider) runs horizontally between `prev`
+/// (above) and `first` (below) across their shared horizontal span.
+fn crosses_horizontal_rule(prev: &TextLine, first: &TextLine, rules: &[[f64; 4]]) -> bool {
+    if rules.is_empty() {
+        return false;
+    }
+    let pr = prev.frame_rect();
+    let fr = first.frame_rect();
+    let (_, prev_y) = prev.frame_origin();
+    let (_, first_y) = first.frame_origin();
+    let line_min = pr[0].min(fr[0]);
+    let line_max = pr[2].max(fr[2]);
+    let min_span = (pr[2] - pr[0]).min(fr[2] - fr[0]).max(1.0);
+
+    rules.iter().any(|&r| {
+        let rr = rect_in_plane(prev, r);
+        let thickness = (rr[3] - rr[1]).abs();
+        let length = (rr[2] - rr[0]).abs();
+        if thickness > 2.5 || length < 4.0 {
+            return false;
+        }
+        let ry = (rr[1] + rr[3]) * 0.5;
+        let between_baselines = ry > first_y + 0.5 && ry < prev_y - 0.5;
+        let overlap = rr[2].min(line_max) - rr[0].max(line_min);
+        between_baselines && overlap >= min_span * 0.35
+    })
+}
+
+fn group_layout(lines: &[TextLine], mixed: bool, rules: &[[f64; 4]]) -> Vec<TextBlock> {
     let mut rows: Vec<Vec<usize>> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
         let joins = rows.last().and_then(|r| r.last()).and_then(|i| lines.get(*i)).is_some_and(|prev| {
@@ -197,6 +266,9 @@ fn group_layout(lines: &[TextLine], mixed: bool) -> Vec<TextBlock> {
             // is a table cell or a tab stop, which a rewrite would close up.
             let scanned = !mixed || (invisible(prev) == invisible(line) && (!invisible(line) || gap < prev.size.max(line.size) * 0.6));
             scanned
+                // Keep independent content streams (such as pasted or relocated text) apart
+                // unless both lines share an explicit marked-content paragraph scope.
+                && (!mixed || prev.stream == line.stream || (prev.scope.is_some() && prev.scope == line.scope))
                 && (mixed || same_style(prev, line))
                 && same_plane(prev, line)
                 // A superscript or subscript run (a footnote marker, say) sits on the same visual
@@ -213,6 +285,7 @@ fn group_layout(lines: &[TextLine], mixed: bool) -> Vec<TextBlock> {
                         && (prev.frame_origin().1 - line.frame_origin().1).abs() < prev.size.max(line.size) * 0.5))
                 && gap >= -prev.size.min(line.size) * 0.2
                 && gap < prev.size.max(line.size) * 1.5
+                && !crosses_vertical_rule(prev, line, rules)
                 // Separate same-style text objects that merely touch or overlap, with no space
                 // between them, are separate labels (for example a paragraph dragged against
                 // another, #594). Style runs and words separated by a space or gap still join.
@@ -229,7 +302,8 @@ fn group_layout(lines: &[TextLine], mixed: bool) -> Vec<TextBlock> {
         }
     }
     let mut blocks: Vec<TextBlock> = Vec::new();
-    for row in rows {
+    for row_at in 0..rows.len() {
+        let Some(row) = rows.get(row_at).cloned() else { continue };
         let Some(first) = row.first().and_then(|i| lines.get(*i)) else { continue };
         let (Some(rect), Some(frame)) = (row_rect(&row, lines), frame_row_rect(&row, lines)) else { continue };
         let joins = blocks.last().is_some_and(|block| {
@@ -255,16 +329,48 @@ fn group_layout(lines: &[TextLine], mixed: bool) -> Vec<TextBlock> {
                 || ((pr[0] + pr[2] - frame[0] - frame[2]) / 2.0).abs() < tol
                 || (pr[2] - frame[2]).abs() < tol
                 || hanging;
+            let own_leading = block.rows.len().checked_sub(2).and_then(|i| {
+                let above = block.rows.get(i)?.first().and_then(|n| lines.get(*n));
+                let below = prev_row.first().and_then(|n| lines.get(*n));
+                match (above, below) {
+                    (Some(above), Some(below)) => Some((above.frame_origin().1 - below.frame_origin().1).abs()),
+                    _ => None,
+                }
+            });
+            let stated = (prev.origin.state.leading > 0.0).then(|| prev.wrap_leading()).filter(|lead| lead.is_finite() && *lead > tol * 0.4);
+            let repeated = rows.get(row_at.saturating_add(1)).and_then(|next| {
+                let nfirst = next.first().and_then(|i| lines.get(*i))?;
+                let nframe = frame_row_rect(next, lines)?;
+                let ngap = first.frame_origin().1 - nfirst.frame_origin().1;
+                let same = same_plane(first, nfirst)
+                    && (mixed || same_style(first, nfirst))
+                    && first.size.min(nfirst.size) >= first.size.max(nfirst.size) * 0.4
+                    && (nframe[0] - frame[0]).abs() < tol;
+                let scale = gap.abs().max(ngap.abs());
+                if same && ngap > tol * 0.8 && scale < tol * 4.0 && (ngap - gap).abs() <= scale * 0.08 + 0.5 { Some(gap) } else { None }
+            });
+            let following = rows.get(row_at.saturating_add(1)).and_then(|next| {
+                let nfirst = next.first().and_then(|i| lines.get(*i))?;
+                let ngap = first.frame_origin().1 - nfirst.frame_origin().1;
+                (same_plane(first, nfirst) && ngap > tol * 0.8 && ngap < tol * 2.05).then_some(ngap)
+            });
+            let max_gap = own_leading
+                .filter(|lead| *lead > tol * 0.4)
+                .or(stated)
+                .or(repeated)
+                .map_or_else(|| following.map_or(tol * 2.05, |lead| (lead * 1.35).min(tol * 2.05)), |lead| lead * 1.5);
             // OCR lines stay apart: the scan fixes where each one is, so they never rewrap together.
             (!mixed || !(invisible(prev) || invisible(first)))
+                && (!mixed || prev.stream == first.stream || (prev.scope.is_some() && prev.scope == first.scope))
                 && (mixed || same_style(prev, first))
                 && same_plane(prev, first)
                 // The rewrite sets every row in the first one's horizontal scale.
                 && (prev.origin.state.scale - first.origin.state.scale).abs() < 1e-6
                 && aligned
+                && !crosses_horizontal_rule(prev, first, rules)
                 && first.size.min(prev.size) >= first.size.max(prev.size) * 0.4
                 && gap > first.size.min(prev.size) * 0.8
-                && gap < first.size.max(prev.size) * 2.5
+                && gap < max_gap
         });
         if !joins {
             blocks.push(TextBlock {
@@ -625,7 +731,7 @@ pub(super) fn rewrite_styled_block(
                     source.bold,
                     source.italic,
                     span_text,
-                )?                {
+                )? {
                     Some(name)
                 } else {
                     return Err(EditError::Invalid(format!(
@@ -653,7 +759,7 @@ pub(super) fn rewrite_styled_block(
                 is_bold,
                 is_italic,
                 span_text,
-            )?            {
+            )? {
                 Some(name)
             } else if metrics.get(&source.font).is_some_and(|m| source_encodes(m, span_text)) {
                 Some(source.font.clone())

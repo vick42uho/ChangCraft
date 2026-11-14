@@ -28,7 +28,8 @@ pub use script::{
     GlyphError, GlyphOutline, INTER_REGULAR, MAX_SIGNATURE_CHARS, ScriptOutline, japanese_glyph, japanese_glyph_from, script_missing, script_outline,
 };
 pub use shaping::{
-    ShapedCluster, ShapedScript, arabic_glyph, arabic_has, hebrew_has, shape_arabic, shape_hebrew, shape_script, shape_thai, shaped_glyph, thai_has,
+    ShapedCluster, ShapedScript, arabic_glyph, arabic_has, hebrew_has, shape_arabic, shape_hebrew, shape_script, shape_thai, shape_thai_named,
+    shaped_glyph, thai_has, thai_script_for_name,
 };
 pub use std14::Std14;
 
@@ -44,6 +45,26 @@ pub fn clean_face_name(raw: &str) -> String {
         name
     };
     name.replace('-', " ")
+}
+
+/// Map raw Windows-874 / TIS-620 characters mistakenly extracted as Latin-1 (WinAnsi)
+/// into standard Unicode Thai characters (U+0E00..=U+0E7F).
+pub fn tis620_to_thai(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(|c| matches!(c as u32, 0xA1..=0xDA | 0xDF..=0xFB)) {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        let code = c as u32;
+        if ((0xA1..=0xDA).contains(&code) || (0xDF..=0xFB).contains(&code))
+            && let Some(thai_char) = char::from_u32((code - 0xA0) + 0x0E00)
+        {
+            out.push(thai_char);
+            continue;
+        }
+        out.push(c);
+    }
+    Cow::Owned(out)
 }
 
 /// Normalise Windows Thai PUA characters (0xF700..=0xF71C) used by Windows print drivers

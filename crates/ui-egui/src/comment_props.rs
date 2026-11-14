@@ -31,6 +31,19 @@ pub struct PropsDraft {
 const ICONS: [NoteIcon; 7] =
     [NoteIcon::Comment, NoteIcon::Note, NoteIcon::Help, NoteIcon::Insert, NoteIcon::Key, NoteIcon::NewParagraph, NoteIcon::Paragraph];
 
+/// Text box fonts: the family name written to the comment, and the name shown.
+const TEXT_BOX_FONTS: [(&str, &str); 9] = [
+    ("Sarabun", "Sarabun (สารบรรณ)"),
+    ("Angsana New", "Angsana New (อังศนา)"),
+    ("Cordia New", "Cordia New (คอร์เดีย)"),
+    ("Browallia New", "Browallia New (บราวเวลเลีย)"),
+    ("Noto Sans Thai", "Noto Sans Thai"),
+    ("IBM Plex Sans Thai", "IBM Plex Sans Thai"),
+    ("Helvetica", "Helvetica"),
+    ("Times", "Times"),
+    ("Courier", "Courier"),
+];
+
 /// The name shown in the line-ending combo. [`LineEnding::name`] stays the PDF `/LE` token.
 fn ending_label(ending: LineEnding) -> &'static str {
     match ending {
@@ -149,6 +162,12 @@ pub fn edits(d: &PropsDraft) -> Vec<Edit> {
     {
         out.push(Edit::FontSizeAnnotation { page: d.page, index: d.index, size });
     }
+    if e.restylable
+        && e.font_size.is_some()
+        && let Some(font) = e.font_family.clone().filter(|f| Some(f) != o.font_family.as_ref())
+    {
+        out.push(Edit::FontAnnotation { page: d.page, index: d.index, font });
+    }
     let author = (e.author != o.author).then(|| e.author.clone());
     let subject = (e.subject != o.subject).then(|| e.subject.clone());
     let icon = (e.icon != o.icon).then_some(e.icon).flatten();
@@ -233,6 +252,25 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> (boo
                         ui.add(egui::DragValue::new(size).range(1.0..=400.0).speed(0.5).suffix(" pt"));
                         ui.end_row();
                     }
+                    if e.font_size.is_some() {
+                        // The same families as Edit a PDF and Fill & Sign, Thai first.
+                        ui.label(tl!("Font"));
+                        let current = e.font_family.clone().unwrap_or_else(|| "Helvetica".into());
+                        let label_of = |name: &str| {
+                            TEXT_BOX_FONTS
+                                .iter()
+                                .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                                .map_or_else(|| name.to_string(), |(_, l)| (*l).to_string())
+                        };
+                        egui::ComboBox::from_id_salt("text-box-font").selected_text(label_of(&current)).width(220.0).show_ui(ui, |ui| {
+                            for (name, label) in TEXT_BOX_FONTS {
+                                if ui.selectable_label(current.eq_ignore_ascii_case(name), label).clicked() {
+                                    e.font_family = Some(name.to_string());
+                                }
+                            }
+                        });
+                        ui.end_row();
+                    }
                     ui.label(tl!("Opacity"));
                     let mut pct = e.opacity * 100.0;
                     if ui.add(egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%")).changed() {
@@ -241,7 +279,14 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> (boo
                     ui.end_row();
                     let min_width = if e.font_size.is_some() { 0.0 } else { 0.5 };
                     if let Some(w) = e.width.as_mut() {
-                        ui.label(tl!("Thickness"));
+                        // A text box's width is its border; a line or shape's is its thickness.
+                        let thai = crate::i18n::current().code() == "th";
+                        let label = match (e.font_size.is_some(), thai) {
+                            (true, true) => "เส้นขอบ",
+                            (true, false) => "Border",
+                            (false, _) => tl!("Thickness"),
+                        };
+                        ui.label(label);
                         ui.add(egui::Slider::new(w, min_width..=12.0).step_by(0.5).suffix(" pt"));
                         ui.end_row();
                     }

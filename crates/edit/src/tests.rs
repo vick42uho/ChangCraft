@@ -3732,10 +3732,7 @@ fn thai_font_switching_between_sarabun_and_noto_sans_thai() {
         ..AddedText::default()
     };
     add_content(&mut doc, 0, &Content::Text(sarabun.clone())).unwrap();
-    let noto = AddedText {
-        family: super::added::Family::NotoSansThai,
-        ..sarabun.clone()
-    };
+    let noto = AddedText { family: super::added::Family::NotoSansThai, ..sarabun.clone() };
     update_content(&mut doc, 0, 0, &Content::Text(noto.clone())).unwrap();
     let reopened = reopen(&doc);
     let item = &list_added(&reopened)[0].content;
@@ -4186,6 +4183,64 @@ fn group_move_budget_refusals_keep_the_original_page_selectable() {
         assert_eq!(pdfcraft_cos::write_full(&doc, &SaveOptions::default()).unwrap(), before);
         assert_eq!(editable_objects(&doc, 0).unwrap(), objects, "refusal retains a usable inventory");
     }
+}
+
+#[test]
+fn moving_table_clipped_text_outside_cell_drops_or_relocates_clip_and_copy_omits_text_clip() {
+    fn dark_pixels_in(doc: &Document, user_rect: [f64; 4]) -> usize {
+        let bytes = Arc::new(pdfcraft_cos::write_full(doc, &SaveOptions::default()).unwrap());
+        let mut renderer = pdfcraft_render::PageRenderer::new(bytes, pdfcraft_render::RenderConfig::default());
+        let rendered = renderer.render(pdfcraft_render::RenderRequest {
+            page: 0,
+            kind: pdfcraft_render::RequestKind::Pixels,
+            tile: None,
+            scale: 1.0,
+            tag: 1,
+            preview: false,
+        });
+        assert!(rendered.error.is_none(), "{:?}", rendered.error);
+        let h = rendered.height as isize;
+        let w = rendered.width as isize;
+        let x0 = (user_rect[0].floor() as isize).max(0);
+        let x1 = (user_rect[2].ceil() as isize).min(w);
+        let y0 = (h - user_rect[3].ceil() as isize).max(0);
+        let y1 = (h - user_rect[1].floor() as isize).min(h);
+        let mut dark = 0usize;
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let idx = ((py * w + px) as usize) * 4;
+                if rendered.rgba[idx] < 100 && rendered.rgba[idx + 1] < 100 && rendered.rgba[idx + 2] < 100 {
+                    dark += 1;
+                }
+            }
+        }
+        dark
+    }
+
+    // Case 1: exclusive q ... re W* n ... BT ... ET ... Q clip around cell text.
+    let mut doc1 = text_page("q 100 600 120 24 re W* n BT /F1 12 Tf 105 608 Td (CellA) Tj ET Q");
+    assert!(dark_pixels_in(&doc1, [100.0, 600.0, 220.0, 624.0]) > 10);
+    assert_eq!(dark_pixels_in(&doc1, [100.0, 515.0, 220.0, 550.0]), 0);
+    let clip = objects::copy_objects(&doc1, 0, &[ObjectTarget { kind: ObjectKind::Text, index: 0 }]).unwrap();
+    let clip_text = String::from_utf8_lossy(&clip.content);
+    assert!(!clip_text.contains("W\n") && !clip_text.contains("W*\n"), "text-only copy must not keep clip path: {clip_text}");
+
+    move_objects(&mut doc1, 0, &[ObjectTarget { kind: ObjectKind::Text, index: 0 }], [0.0, -80.0]).unwrap();
+    let stream1 = String::from_utf8_lossy(&page_content_bytes(&doc1, 0)).into_owned();
+    assert!(!stream1.contains("W*"), "exclusive clip should be removed in-place: {stream1}");
+    assert!(dark_pixels_in(&doc1, [100.0, 515.0, 220.0, 550.0]) > 10, "moved text must render unclipped");
+
+    // Case 2: shared clip with background fill + sibling unselected text in same BT.
+    let mut doc2 = text_page("q 100 570 90 70 re W n q 0.9 g 100 570 90 70 re f Q BT /F1 12 Tf 105 620 Td (MoveMe) Tj 0 -36 Td (StayHere) Tj ET Q");
+    let before_blocks = text::text_blocks(&doc2, 0).unwrap();
+    assert_eq!(before_blocks.len(), 2);
+    let stay_before = before_blocks[1].rect;
+    let moved_idx = ObjectTarget { kind: ObjectKind::Text, index: 0 };
+    move_objects(&mut doc2, 0, &[moved_idx], [160.0, 0.0]).unwrap();
+    assert!(dark_pixels_in(&doc2, [255.0, 610.0, 340.0, 638.0]) > 10, "relocated text must render outside original cell clip");
+    let after_blocks = text::text_blocks(&doc2, 0).unwrap();
+    let stay_after = after_blocks.iter().find(|b| b.editor_text == "StayHere").expect("unselected text stays");
+    assert!((stay_after.rect[0] - stay_before[0]).abs() < 0.5 && (stay_after.rect[1] - stay_before[1]).abs() < 0.5);
 }
 
 #[test]
@@ -6296,6 +6351,47 @@ fn equal_size_rows_need_the_tighter_tolerance_even_without_overlap() {
     assert_eq!(blocks.len(), 2, "two separate rows stay two paragraphs, not one: {blocks:?}");
 }
 
+#[test]
+fn text_in_separate_content_streams_is_grouped_apart() {
+    // The same row, a word space apart, but each stream is its own producer object: a label left
+    // over from another edit or a field filled in beside it. A move must take only one of them.
+    let doc = split_page("BT /F1 12 Tf 72 700 Td (Left) Tj ET", "BT /F1 12 Tf 100 700 Td (Right) Tj ET");
+    let blocks = text::text_blocks(&doc, 0).unwrap();
+    assert_eq!(blocks.iter().map(|b| b.text.as_str()).collect::<Vec<_>>(), ["Left", "Right"], "{blocks:?}");
+}
+
+#[test]
+fn table_rules_between_cells_keep_their_text_in_separate_blocks() {
+    // A bold label and the value beside it (16 pt apart, on one baseline) are read as separate
+    // lines because their styles differ, then grouped into one row: nothing but the cell border
+    // is left to say they are different cells.
+    let vertical = "BT /F5 12 Tf 72 700 Td (Total) Tj ET BT /F1 12 Tf 110 700 Td (100) Tj ET";
+    let horizontal = "BT /F1 12 Tf 72 700 Td (First line) Tj ET BT /F1 12 Tf 72 686 Td (Second line) Tj ET";
+    // Without a border, the same text groups into one paragraph.
+    assert_eq!(text::text_blocks(&text_page(vertical), 0).unwrap().len(), 1);
+    assert_eq!(text::text_blocks(&text_page(horizontal), 0).unwrap().len(), 1);
+    // A table column border and a row divider split the cells they separate.
+    let column = text_page(&format!("{vertical} 105 690 m 105 720 l S"));
+    assert_eq!(text::text_blocks(&column, 0).unwrap().len(), 2, "{:?}", text::text_blocks(&column, 0).unwrap());
+    let row = text_page(&format!("{horizontal} 72 693 m 160 693 l S"));
+    assert_eq!(text::text_blocks(&row, 0).unwrap().len(), 2, "{:?}", text::text_blocks(&row, 0).unwrap());
+}
+
+#[test]
+fn evenly_spaced_rows_group_even_beyond_twice_the_text_size() {
+    let rows = |n: usize| {
+        let mut content = String::new();
+        for i in 0..n {
+            content.push_str(&format!("BT /F1 12 Tf 72 {} Td (Row {i}) Tj ET ", 700 - 32 * i));
+        }
+        text_page(&content)
+    };
+    // Three rows at a consistent 32 pt spacing are one paragraph; two alone could be a pair of
+    // separate lines, and stay apart.
+    assert_eq!(text::text_blocks(&rows(3), 0).unwrap().len(), 1, "{:?}", text::text_blocks(&rows(3), 0).unwrap());
+    assert_eq!(text::text_blocks(&rows(2), 0).unwrap().len(), 2);
+}
+
 /// A `TJ` with a surplus array operand (`[(FIRSTARR)] [(LASTARR)] TJ`) is malformed, but the
 /// operator still takes the one immediately before it, as the renderer, MuPDF and pdftotext do
 /// (#3569) -- not the first, which this reader took before, showing a word the page never draws.
@@ -6465,4 +6561,139 @@ fn reading_keeps_dotted_leader_entries_whole_and_in_order() {
             "Ordinary body text. Still the same paragraph.",
         ]
     );
+}
+
+#[test]
+fn move_objects_supports_actual_text_clipped_table_cells_and_cropped_images() {
+    let thai_hex: String = "สวัสดี".encode_utf16().map(|u| format!("{u:04X}")).collect();
+
+    // 1a. Wrapped /ActualText paragraph moves cleanly and preserves logical text and wrapper.
+    let mut doc1a = text_page(&format!("/Span <</ActualText <FEFF{thai_hex}>>> BDC BT /F1 12 Tf 72 700 Td (ab) Tj ET EMC"));
+    let before1a = editable_objects(&doc1a, 0).unwrap();
+    move_objects(&mut doc1a, 0, &[before1a[0].target], [20.0, -10.0]).unwrap();
+    let reopened1a = reopen(&doc1a);
+    let after1a = editable_objects(&reopened1a, 0).unwrap();
+    assert_eq!(after1a[0].text.as_deref(), Some("สวัสดี"));
+    assert!(close(after1a[0].rect, [before1a[0].rect[0] + 20.0, before1a[0].rect[1] - 10.0, before1a[0].rect[2] + 20.0, before1a[0].rect[3] - 10.0]));
+
+    // 1b. Inline ligature /ActualText span inside BT..ET moves cleanly.
+    let mut doc1b = text_page("BT /F1 12 Tf 72 700 Td (de) Tj /Span <</ActualText <FEFF00660069>>> BDC (X) Tj EMC (ned) Tj ET");
+    let before1b = editable_objects(&doc1b, 0).unwrap();
+    move_objects(&mut doc1b, 0, &[before1b[0].target], [20.0, -10.0]).unwrap();
+    let after1b = editable_objects(&reopen(&doc1b), 0).unwrap();
+    assert_eq!(after1b[0].text.as_deref(), Some("defined"));
+    assert!(close(after1b[0].rect, [before1b[0].rect[0] + 20.0, before1b[0].rect[1] - 10.0, before1b[0].rect[2] + 20.0, before1b[0].rect[3] - 10.0]));
+
+    // 2. Rewritten Thai paragraph (if CRAFT_FONTS_DIR is available) moves and pastes+moves cleanly.
+    if pdfcraft_fonts::document_thai_font().is_some() {
+        let mut doc2 = text_page("BT /F1 12 Tf 72 700 Td (Hello) Tj ET");
+        text::rewrite_block(
+            &mut doc2,
+            0,
+            0,
+            Some("สวัสดีครับ"),
+            &text::BlockStyle { family: Some((added::Family::Sarabun, false, false)), ..Default::default() },
+        )
+        .unwrap();
+        let before2 = editable_objects(&doc2, 0).unwrap();
+        move_objects(&mut doc2, 0, &[before2[0].target], [25.0, -15.0]).unwrap();
+        let reopened2 = reopen(&doc2);
+        let after2 = editable_objects(&reopened2, 0).unwrap();
+        assert!(close(after2[0].rect, [before2[0].rect[0] + 25.0, before2[0].rect[1] - 15.0, before2[0].rect[2] + 25.0, before2[0].rect[3] - 15.0]));
+
+        let copied = copy_objects(&reopened2, 0, &[after2[0].target]).unwrap();
+        let mut pasted_doc = reopened2;
+        paste_objects(&mut pasted_doc, 0, &copied, [50.0, 0.0]).unwrap();
+        let objs = editable_objects(&pasted_doc, 0).unwrap();
+        let last = objs.last().unwrap().clone();
+        move_objects(&mut pasted_doc, 0, &[last.target], [10.0, -10.0]).unwrap();
+        let after_paste_move = editable_objects(&reopen(&pasted_doc), 0).unwrap();
+        assert!(close(after_paste_move.last().unwrap().rect, [last.rect[0] + 10.0, last.rect[1] - 10.0, last.rect[2] + 10.0, last.rect[3] - 10.0]));
+    }
+
+    // 3a & 3b. Relocated table cell after both closed q Tr>=4 Q and bare Tr>=4 moves cleanly & repeats.
+    for prefix in ["q BT /F1 12 Tf 7 Tr 10 10 Td (Wm) Tj ET Q ", "BT /F1 12 Tf 7 Tr 10 10 Td (Wm) Tj ET 0 Tr "] {
+        let mut doc = text_page(&format!("{prefix}q 40 680 120 40 re W n 40 680 120 40 re S BT /F1 12 Tf 50 700 Td (CellA) Tj ET Q"));
+        let cell = editable_objects(&doc, 0).unwrap().into_iter().find(|o| o.text.as_deref() == Some("CellA")).unwrap();
+        move_objects(&mut doc, 0, &[cell.target], [100.0, -80.0]).unwrap();
+        let mid = reopen(&doc);
+        let cell_mid = editable_objects(&mid, 0).unwrap().into_iter().find(|o| o.text.as_deref() == Some("CellA")).unwrap();
+        assert!(close(cell_mid.rect, [cell.rect[0] + 100.0, cell.rect[1] - 80.0, cell.rect[2] + 100.0, cell.rect[3] - 80.0]));
+
+        let mut doc2 = mid;
+        move_objects(&mut doc2, 0, &[cell_mid.target], [10.0, -10.0]).unwrap();
+        let cell_end = editable_objects(&reopen(&doc2), 0).unwrap().into_iter().find(|o| o.text.as_deref() == Some("CellA")).unwrap();
+        assert!(close(cell_end.rect, [cell_mid.rect[0] + 10.0, cell_mid.rect[1] - 10.0, cell_mid.rect[2] + 10.0, cell_mid.rect[3] - 10.0]));
+    }
+
+    // 3c & 3d. Relocated cell leaves siblings (both Td and inline TJ) in place.
+    let mut doc_td = text_page("q 40 680 300 40 re W n 40 680 300 40 re S BT /F1 12 Tf 50 700 Td (MoveMe) Tj 200 0 Td (StayHere) Tj ET Q");
+    let objs_td = editable_objects(&doc_td, 0).unwrap();
+    let move_td = objs_td.iter().find(|o| o.text.as_deref() == Some("MoveMe")).unwrap().clone();
+    let stay_before_td = text::text_lines(&doc_td, 0).unwrap().into_iter().find(|l| l.text == "StayHere").unwrap().rect;
+    move_objects(&mut doc_td, 0, &[move_td.target], [0.0, -100.0]).unwrap();
+    let stay_after_td = text::text_lines(&reopen(&doc_td), 0).unwrap().into_iter().find(|l| l.text == "StayHere").unwrap().rect;
+    assert!(close(stay_after_td, stay_before_td));
+
+    let mut doc_tj = text_page("q 40 680 300 40 re W n 40 680 300 40 re S BT /F1 12 Tf 50 700 Td (Move) Tj [-15000] TJ (Keep) Tj ET Q");
+    let stay_before_tj = text::text_lines(&doc_tj, 0).unwrap().into_iter().find(|l| l.text == "Keep").unwrap().rect;
+    let m_tj = editable_objects(&doc_tj, 0).unwrap().into_iter().find(|o| o.text.as_deref() == Some("Move")).unwrap().target;
+    move_objects(&mut doc_tj, 0, &[m_tj], [0.0, -100.0]).unwrap();
+    let stay_after_tj = text::text_lines(&reopen(&doc_tj), 0).unwrap().into_iter().find(|l| l.text == "Keep").unwrap().rect;
+    assert!(close(stay_after_tj, stay_before_tj));
+
+    // 3e. Relocating an /ActualText cell preserves its /ActualText in "Moved" and leaves no empty BDC/EMC behind.
+    let mut doc_reloc_at = text_page(&format!(
+        "q 40 680 120 40 re W n 40 680 120 40 re S \
+         /Span <</ActualText <FEFF{thai_hex}>>> BDC BT /F1 12 Tf 50 700 Td (ab) Tj ET EMC Q"
+    ));
+    let cell_at = editable_objects(&doc_reloc_at, 0).unwrap().into_iter().find(|o| o.text.as_deref() == Some("สวัสดี")).unwrap().target;
+    move_objects(&mut doc_reloc_at, 0, &[cell_at], [100.0, -80.0]).unwrap();
+    let streams_after = streams(&doc_reloc_at, 0);
+    assert!(!streams_after[0].contains("ActualText"), "empty ActualText wrapper dropped from source: {:?}", streams_after[0]);
+    assert!(streams_after.last().unwrap().contains("ActualText"), "ActualText preserved in Moved stream: {:?}", streams_after.last());
+    let after_at = editable_objects(&reopen(&doc_reloc_at), 0).unwrap();
+    assert!(after_at.iter().any(|o| o.text.as_deref() == Some("สวัสดี")));
+
+    // 4. Editor-cropped image moves cleanly with its crop and folds repeated moves into one enclosing cm.
+    let mut img_doc = image_page();
+    let img_before = images::page_images(&img_doc, 0).unwrap()[0].clone();
+    let crop = [img_before.rect[0] + 5.0, img_before.rect[1] + 5.0, img_before.rect[2] - 5.0, img_before.rect[3] - 5.0];
+    images::change_image(&mut img_doc, 0, 0, &images::ImageChange::Crop(crop)).unwrap();
+    let img_target = ObjectTarget { kind: ObjectKind::Image, index: 0 };
+    move_objects(&mut img_doc, 0, &[img_target], [20.0, -10.0]).unwrap();
+    let img_mid = images::page_images(&reopen(&img_doc), 0).unwrap()[0].clone();
+    assert!(close(img_mid.visible_rect.unwrap(), [crop[0] + 20.0, crop[1] - 10.0, crop[2] + 20.0, crop[3] - 10.0]));
+    move_objects(&mut img_doc, 0, &[img_target], [10.0, 5.0]).unwrap();
+    let img_end = images::page_images(&reopen(&img_doc), 0).unwrap()[0].clone();
+    assert!(img_end.has_editor_crop());
+    assert!(close(img_end.rect, [img_before.rect[0] + 30.0, img_before.rect[1] - 5.0, img_before.rect[2] + 30.0, img_before.rect[3] - 5.0]));
+    assert!(close(img_end.visible_rect.unwrap(), [crop[0] + 30.0, crop[1] - 5.0, crop[2] + 30.0, crop[3] - 5.0]));
+    let cm_count = pdfcraft_content::parse(&page_content_bytes(&img_doc, 0)).ops.iter().filter(|o| o.is("cm")).count();
+    assert_eq!(cm_count, 1, "folded outer moves into image cm without extra wrappers");
+}
+
+#[test]
+fn cropped_image_inside_outer_clip_scope_moves_with_its_crop() {
+    let mut doc = image_page_with("q 120 110 160 80 re W n q 200 0 0 100 100 100 cm /Im0 Do Q Q BT /F1 12 Tf 72 700 Td (Caption) Tj ET");
+    let before = images::page_images(&doc, 0).unwrap()[0].clone();
+    let before_vis = before.visible_rect.unwrap();
+    assert!(close(before.rect, [100.0, 100.0, 300.0, 200.0]), "raw rect: {:?}", before.rect);
+    assert!(close(before_vis, [120.0, 110.0, 280.0, 190.0]), "visible crop: {:?}", before_vis);
+
+    let target = [before_vis[0] + 20.0, before_vis[1] + 15.0, before_vis[2] + 20.0, before_vis[3] + 15.0];
+    images::change_image(&mut doc, 0, 0, &images::ImageChange::Transform(images::rect_to_rect(before_vis, target))).unwrap();
+    let mid_doc = reopen(&doc);
+    let mid = images::page_images(&mid_doc, 0).unwrap()[0].clone();
+    assert!(close(mid.rect, [before.rect[0] + 20.0, before.rect[1] + 15.0, before.rect[2] + 20.0, before.rect[3] + 15.0]));
+    assert!(close(mid.visible_rect.unwrap(), target));
+
+    let mut doc2 = mid_doc;
+    images::translate_images(&mut doc2, 0, &[0], [20.0, -15.0]).unwrap();
+    let after_doc = reopen(&doc2);
+    let after = images::page_images(&after_doc, 0).unwrap()[0].clone();
+    assert!(close(after.rect, [mid.rect[0] + 20.0, mid.rect[1] - 15.0, mid.rect[2] + 20.0, mid.rect[3] - 15.0]));
+    assert!(close(after.visible_rect.unwrap(), [target[0] + 20.0, target[1] - 15.0, target[2] + 20.0, target[3] - 15.0]));
+    let caption: Vec<_> = text::text_lines(&after_doc, 0).unwrap().into_iter().map(|l| l.text).collect();
+    assert_eq!(caption, ["Caption"]);
 }

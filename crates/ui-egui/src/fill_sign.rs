@@ -404,6 +404,7 @@ pub struct TypeBox {
     pub at: [f64; 2],
     pub text: String,
     pub size: f64,
+    pub font: String,
     pub focus: bool,
 }
 
@@ -430,8 +431,23 @@ fn new(page: usize, shape: Shape, contents: String, author: &str) -> Edit {
 /// A typewriter annotation sized to its text, its displayed top-left at `at` on a page turned by
 /// `rotation` (its `/Rotate`).
 pub fn typed(page: usize, at: [f64; 2], text: &str, size: f64, rotation: i64, author: &str) -> Edit {
+    typed_with_font(page, at, text, size, rotation, author, "Sarabun")
+}
+
+/// A typewriter annotation with an explicit font family name.
+pub fn typed_with_font(page: usize, at: [f64; 2], text: &str, size: f64, rotation: i64, author: &str, font: &str) -> Edit {
     let rect = crate::comments::text_box_rect(at, text, size, rotation);
-    new(page, Shape::Typewriter { rect, font_size: size }, text.to_string(), author)
+    let mut style = Style::default_for(&Shape::Typewriter { rect, font_size: size });
+    if !font.is_empty() {
+        style.font = Some(font.to_string());
+    }
+    Edit::AddAnnotation(NewAnnotation {
+        page,
+        shape: Shape::Typewriter { rect, font_size: size },
+        style,
+        contents: text.to_string(),
+        author: author.to_string(),
+    })
 }
 
 /// Place a saved signature (strokes normalised to a 0–1 box, y up) with its left edge at `at`,
@@ -553,7 +569,8 @@ pub(crate) fn signature_entries(ui: &mut egui::Ui, app: &mut crate::PdfCraftApp,
         let label = |template: &str| crate::i18n::fmt(tl!(template), &[("what", tl!(what))]);
         if let Some(saved) = saved {
             let is_active = app.active_signature_slot == slot
-                && app.quick_tool == crate::QuickTool::Fill(if slot == 1 { crate::fill_sign::FillTool::Initials } else { crate::fill_sign::FillTool::Signature });
+                && app.quick_tool
+                    == crate::QuickTool::Fill(if slot == 1 { crate::fill_sign::FillTool::Initials } else { crate::fill_sign::FillTool::Signature });
             ui.horizontal(|ui| {
                 let (rect, response) = ui.allocate_exact_size(vec2((ui.available_width() - 68.0).max(140.0), 52.0), Sense::click());
                 let use_label = label("Use {what}");
@@ -589,12 +606,12 @@ pub(crate) fn signature_entries(ui: &mut egui::Ui, app: &mut crate::PdfCraftApp,
         }
     }
 
-    if let Some((_what, change_id)) = first_empty_extra {
-        if app.signature.is_some() || app.initials.is_some() {
-            let label = crate::i18n::fmt(tl!("Add {what}"), &[("what", tl!("signature"))]);
-            if crate::widgets::ghost_button(ui, "plus", &label).clicked() {
-                command = Some(change_id);
-            }
+    if let Some((_what, change_id)) = first_empty_extra
+        && app.signature.is_some()
+    {
+        let label = crate::i18n::t("Add signature");
+        if crate::widgets::ghost_button(ui, "plus", label).clicked() {
+            command = Some(change_id);
         }
     }
 
@@ -652,6 +669,7 @@ pub(crate) fn page_input(
     info: &DocInfo,
     tool: FillTool,
     text_size: f64,
+    font: &str,
     view: &mut DocView,
     signature: Option<&SavedSig>,
     initials: Option<&SavedSig>,
@@ -689,13 +707,21 @@ pub(crate) fn page_input(
         FillTool::Text => {
             // Clicking away from an open box commits it: the page sees this click before the box
             // sees its lost focus, so replacing the box first would drop what was typed.
-            let open = view.fill_text.replace(TypeBox { page, at: top, text: String::new(), size: text_size, focus: true });
+            let open = view.fill_text.replace(TypeBox { page, at: top, text: String::new(), size: text_size, font: font.to_string(), focus: true });
             open.filter(|tb| !tb.text.trim().is_empty()).map(|tb| {
-                FillAction::Edit(Box::new(typed(tb.page, tb.at, &tb.text, tb.size, crate::comments::page_rotation(info, tb.page), author)))
+                FillAction::Edit(Box::new(typed_with_font(
+                    tb.page,
+                    tb.at,
+                    &tb.text,
+                    tb.size,
+                    crate::comments::page_rotation(info, tb.page),
+                    author,
+                    &tb.font,
+                )))
             })
         }
         FillTool::Date => Some(match date_text {
-            Ok(text) => FillAction::Edit(Box::new(typed(page, top, text, text_size, rotation, author))),
+            Ok(text) => FillAction::Edit(Box::new(typed_with_font(page, top, text, text_size, rotation, author, font))),
             Err(why) => FillAction::Refused(why.clone()),
         }),
         FillTool::Signature => match signature {
@@ -751,7 +777,16 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
             let Some(t) = view.fill_text.as_mut() else { return };
             // The box is white in every theme, so the caret must not follow the theme (pale in dark mode) (#655).
             ui.visuals_mut().text_cursor.stroke.color = crate::edit_text_ui::caret_color_on(Color32::WHITE);
-            let font = egui::FontId::proportional((t.size as f32 * zoom).max(8.0));
+            let font_family = match t.font.as_str() {
+                "Courier" => egui::FontFamily::Monospace,
+                "Times" | "Helvetica" => egui::FontFamily::Proportional,
+                fam if !fam.is_empty() => {
+                    let name_fam = egui::FontFamily::Name(fam.into());
+                    if ui.ctx().fonts(|f| f.definitions().families.contains_key(&name_fam)) { name_fam } else { egui::FontFamily::Proportional }
+                }
+                _ => egui::FontFamily::Proportional,
+            };
+            let font = egui::FontId::new((t.size as f32 * zoom).max(8.0), font_family);
             let natural = ui.fonts_mut(|f| f.layout_no_wrap(t.text.clone(), font.clone(), Color32::BLACK).size().x);
             let margin = egui::Margin::symmetric(4, 2);
             // Include the field padding and a pixel for layout rounding in the measured width.
@@ -760,9 +795,8 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
             // box grows as text is typed.
             ui.set_min_width(width);
             let r = ui.add(
-                egui::TextEdit::multiline(&mut t.text)
+                egui::TextEdit::singleline(&mut t.text)
                     .margin(margin)
-                    .desired_rows(1)
                     .font(font)
                     .desired_width(width)
                     .background_color(Color32::from_rgba_unmultiplied(255, 255, 255, 230))
@@ -787,7 +821,7 @@ pub(crate) fn type_box(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, 
     if commit {
         let tb = view.fill_text.take()?;
         if !tb.text.trim().is_empty() {
-            return Some(typed(tb.page, tb.at, &tb.text, tb.size, crate::comments::page_rotation(info, tb.page), author));
+            return Some(typed_with_font(tb.page, tb.at, &tb.text, tb.size, crate::comments::page_rotation(info, tb.page), author, &tb.font));
         }
     }
     None

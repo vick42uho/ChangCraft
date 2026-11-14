@@ -11,6 +11,10 @@
 
 /// Whether `a` and `b` name the same file: equal, or equal once made absolute against the
 /// current directory (links are not resolved, as in `last_session`).
+pub(crate) fn thai_default_font(text: &str) -> Option<String> {
+    text.chars().any(|c| matches!(c, '\u{0E00}'..='\u{0E7F}')).then(|| "Sarabun".into())
+}
+
 pub(crate) fn same_file(a: &str, b: &str) -> bool {
     a == b || matches!((std::path::absolute(a), std::path::absolute(b)), (Ok(x), Ok(y)) if x == y)
 }
@@ -113,8 +117,8 @@ mod word_count_ui;
 pub use print_ui::{Handling as PrintHandling, OptionsSource, PrintDraft, PrinterSource, Which as PrintWhich, system_printers};
 mod redact_ui;
 pub use redact_ui::{HiddenDraft, PagesDraft as RedactPagesDraft, RedactPrefs, SearchDraft as RedactSearchDraft, SearchMode as RedactSearchMode};
-pub mod i18n;
 pub mod handwriting;
+pub mod i18n;
 
 /// [`PdfCraftApp::date_text`] for callers that already borrow other parts of the app.
 pub(crate) fn date_text(session: &Session, fmt: Option<&str>) -> Result<String, String> {
@@ -442,6 +446,12 @@ pub struct PasswordPrompt {
     after_open: Option<pdfcraft_render::RemoteDestination>,
 }
 
+impl Drop for PasswordPrompt {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.input);
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 struct PendingOpen {
     token: u64,
@@ -477,6 +487,12 @@ pub struct UnlockPrompt {
     pub error: Option<String>,
     /// The command to run once unlocked (Protect using password, Remove security), if any.
     pub then: Option<&'static str>,
+}
+
+impl Drop for UnlockPrompt {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.input);
+    }
 }
 
 impl UnlockPrompt {
@@ -567,6 +583,8 @@ pub struct PdfCraftApp {
     pub flatten_fill_sign_on_save: bool,
     /// Point size for new Fill & Sign text and dates, kept across launches.
     pub fill_text_size: f64,
+    /// Font family for new Fill & Sign text and dates (defaults to Sarabun for Thai).
+    pub fill_text_font: String,
     pub dialog: Option<Dialog>,
     /// How to ask for the latest release (the desktop app sets it; see `updates`).
     pub update_source: Option<updates::UpdateSource>,
@@ -739,6 +757,9 @@ pub struct PdfCraftApp {
     pub page_clipboard: Option<PageClip>,
     /// Annotation / text box copied to clipboard, ready to paste on any page.
     pub annot_clipboard: Option<NewAnnotation>,
+    /// Objects copied together in Edit a PDF, to paste into this or another document.
+    pub object_clipboard: Option<pdfcraft_engine::ObjectClipboard>,
+    pub(crate) object_clip_mark: Option<String>,
     /// Files dropped on the page grid, waiting for the pointer to say which gap they go to.
     grid_drop: Option<GridDrop>,
     /// The last snapshot (width, height, RGBA); `system_clipboard` also puts it on the
@@ -982,6 +1003,7 @@ impl PdfCraftApp {
             ui_scale_applied: None,
             flatten_fill_sign_on_save: false,
             fill_text_size: fill_sign::TEXT_SIZE,
+            fill_text_font: "Sarabun".to_string(),
             dialog: None,
             update_source: None,
             updates: updates::Updates::default(),
@@ -1081,6 +1103,8 @@ impl PdfCraftApp {
             progress_notice: None,
             page_clipboard: None,
             annot_clipboard: None,
+            object_clipboard: None,
+            object_clip_mark: None,
             grid_drop: None,
             last_snapshot: None,
             last_copied_image: None,
@@ -1727,11 +1751,11 @@ impl PdfCraftApp {
 
     /// Answer the password prompt (`None` cancels).
     pub fn submit_password(&mut self, password: Option<String>) {
-        let Some(p) = self.password_prompt.take() else { return };
+        let Some(mut p) = self.password_prompt.take() else { return };
         let Some(pw) = password else {
             // A cancelled recovery goes back on offer; its snapshot stays in the store and must
             // not attach itself to whatever document is unlocked next (#813).
-            if let Some(meta) = p.recovered {
+            if let Some(meta) = p.recovered.take() {
                 self.recoverable.push(meta);
             }
             return;
@@ -1758,8 +1782,8 @@ impl PdfCraftApp {
         }
         #[cfg(not(target_arch = "wasm32"))]
         let (path_for_watch, stamp_for_watch) = (p.path.clone(), p.stamp);
-        let after_open = p.after_open.clone();
-        match self.try_open(&p.name, p.path, p.bytes, Some(&pw), p.activate) {
+        let after_open = p.after_open.take();
+        match self.try_open(&p.name, p.path.take(), p.bytes.clone(), Some(&pw), p.activate) {
             Err(e) => self.notify_fmt("Couldn't open {name}: {e}", &[("name", &p.name), ("e", &e.to_string())]),
             // A recovered encrypted document is open once its prompt is gone.
             Ok(()) if self.password_prompt.is_none() => {
@@ -1787,7 +1811,7 @@ impl PdfCraftApp {
             // and the tool waiting for it.
             Ok(()) => {
                 if let Some(prompt) = self.password_prompt.as_mut() {
-                    prompt.recovered = p.recovered;
+                    prompt.recovered = p.recovered.take();
                     prompt.then = p.then;
                     prompt.after_open = after_open;
                 }
@@ -3064,6 +3088,10 @@ impl PdfCraftApp {
                     if let Some(doc) = self.session.get(self.views[i].id) {
                         prepare::select_all(&mut self.views[i], &doc.form);
                     }
+                } else if self.quick_tool == QuickTool::EditText {
+                    if let Some(doc) = self.session.get(self.views[i].id) {
+                        crate::object_ui::select_all(&mut self.views[i], doc);
+                    }
                 } else {
                     self.views[i].select_all();
                 }
@@ -3112,11 +3140,17 @@ impl PdfCraftApp {
         false
     }
 
-    /// ⌘C copies the selected text or selected annotation/textbox, unless a text field has the keyboard (it copies its own).
+    /// ⌘C copies the selected text, selected objects, or selected annotation/textbox.
     fn copy_key(&mut self, i: usize, ctx: &egui::Context) {
         // ⌘C arrives as a Copy event on most platforms.
-        let copy = ctx.input(|input| input.events.iter().any(|e| matches!(e, egui::Event::Copy)));
-        if !copy || ctx.egui_wants_keyboard_input() {
+        let copy = ctx.input(|input| input.events.iter().any(|e| matches!(e, egui::Event::Copy)))
+            || ctx.input_mut(|input| input.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C)));
+        let cut = ctx.input_mut(|input| input.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X)));
+        if (!copy && !cut) || ctx.egui_wants_keyboard_input() {
+            return;
+        }
+        if self.quick_tool == QuickTool::EditText && self.views.get(i).is_some_and(|v| v.objects.count() > 0) {
+            self.copy_objects(i, ctx, cut);
             return;
         }
         if let Some((page, annot_idx)) = self.views.get(i).and_then(|v| v.comments.selected) {
@@ -3134,33 +3168,25 @@ impl PdfCraftApp {
             "FreeText" => {
                 let h = (a.rect[3] - a.rect[1]).abs() as f64;
                 let font_size = if h > 30.0 { 12.0 } else { (h * 0.7).clamp(8.0, 24.0) };
-                Shape::TextBox {
-                    rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64],
-                    font_size,
-                }
+                Shape::TextBox { rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64], font_size }
             }
-            "Square" => Shape::Rectangle {
-                rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64],
-            },
-            "Circle" => Shape::Oval {
-                rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64],
-            },
+            "Square" => Shape::Rectangle { rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64] },
+            "Circle" => Shape::Oval { rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64] },
             "Line" if a.points.len() >= 2 => Shape::Line {
                 from: [a.points[0][0] as f64, a.points[0][1] as f64],
                 to: [a.points[1][0] as f64, a.points[1][1] as f64],
                 start: LineEnding::None,
                 end: LineEnding::None,
             },
-            _ => Shape::TextBox {
-                rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64],
-                font_size: 12.0,
-            },
+            _ => Shape::TextBox { rect: [a.rect[0] as f64, a.rect[1] as f64, a.rect[2] as f64, a.rect[3] as f64], font_size: 12.0 },
         };
+        let font = doc.comment_props(page, index).and_then(|p| p.font_family).or_else(|| thai_default_font(a.contents.as_deref().unwrap_or("")));
         let style = Style {
             color: a.color.map(|c| [c[0] as f64, c[1] as f64, c[2] as f64]).unwrap_or([0.0, 0.0, 0.0]),
             width: 1.0,
             opacity: 1.0,
             fill: None,
+            font,
         };
         self.annot_clipboard = Some(NewAnnotation {
             page,
@@ -3169,10 +3195,10 @@ impl PdfCraftApp {
             contents: a.contents.clone().unwrap_or_default(),
             author: a.author.clone().unwrap_or_default(),
         });
-        if let Some(ctx) = &self.ctx {
-            if let Some(c) = &a.contents {
-                ctx.copy_text(c.clone());
-            }
+        if let Some(ctx) = &self.ctx
+            && let Some(c) = &a.contents
+        {
+            ctx.copy_text(c.clone());
         }
     }
 
@@ -3181,9 +3207,7 @@ impl PdfCraftApp {
         let mut pasted = clip;
         pasted.page = target_page;
         match &mut pasted.shape {
-            Shape::TextBox { rect, .. }
-            | Shape::Rectangle { rect }
-            | Shape::Oval { rect } => {
+            Shape::TextBox { rect, .. } | Shape::Rectangle { rect } | Shape::Oval { rect } => {
                 rect[0] += 20.0;
                 rect[1] -= 20.0;
                 rect[2] += 20.0;
@@ -3201,6 +3225,127 @@ impl PdfCraftApp {
         self.apply_edit(Edit::AddAnnotation(pasted));
     }
 
+    /// ⌘C / ⌘X in Edit a PDF with objects selected together: copy them for ⌘V in any open
+    /// document, and put their text on the system clipboard for other applications.
+    pub(crate) fn copy_objects(&mut self, i: usize, ctx: &egui::Context, cut: bool) -> bool {
+        let Some(v) = self.views.get(i) else { return false };
+        let id = v.id;
+        let Some(doc) = self.session.get(id) else { return false };
+        let selection = v.objects.selection().or_else(|| crate::object_ui::single(v, v.current).map(|t| (v.current, vec![t]))).or_else(|| {
+            let (cp, pt) = v.comments.context_at?;
+            if let Ok(objs) = doc.editable_objects(cp) {
+                for obj in objs.iter().rev() {
+                    let r = obj.rect;
+                    if pt[0] >= r[0] - 4.0 && pt[0] <= r[2] + 4.0 && pt[1] >= r[1] - 4.0 && pt[1] <= r[3] + 4.0 {
+                        return Some((cp, vec![obj.target]));
+                    }
+                }
+            }
+            let blocks = doc.text_blocks(cp);
+            for (bi, b) in blocks.iter().enumerate().rev() {
+                let r = b.rect;
+                if pt[0] >= r[0] - 4.0 && pt[0] <= r[2] + 4.0 && pt[1] >= r[1] - 4.0 && pt[1] <= r[3] + 4.0 {
+                    return Some((cp, vec![pdfcraft_engine::ObjectTarget { kind: pdfcraft_engine::ObjectKind::Text, index: bi }]));
+                }
+            }
+            None
+        });
+        let Some((page, targets)) = selection else { return false };
+        if !self.may_copy(id) {
+            return false;
+        }
+        let Some(doc) = self.session.get(id) else { return false };
+        if cut && !doc.allows_modification() {
+            self.notify_error(tl!("The document's security settings don't allow this change"));
+            return false;
+        }
+        let clip = match doc.copy_objects(page, &targets) {
+            Ok(clip) => clip,
+            Err(e) => {
+                // Fallback if the object sits inside a complex Form XObject stream that copy_objects cannot slice directly:
+                // still copy the text and annotation clipboard so Ctrl+C / Ctrl+V works!
+                let blocks = doc.text_blocks(page);
+                let mut texts = Vec::new();
+                let mut rect_opt: Option<[f64; 4]> = None;
+                for t in &targets {
+                    if t.kind == pdfcraft_engine::ObjectKind::Text
+                        && let Some(b) = blocks.get(t.index)
+                    {
+                        let bt = b.text.clone();
+                        if !bt.is_empty() {
+                            texts.push(bt);
+                            rect_opt = Some(match rect_opt {
+                                None => b.rect,
+                                Some(r) => [r[0].min(b.rect[0]), r[1].min(b.rect[1]), r[2].max(b.rect[2]), r[3].max(b.rect[3])],
+                            });
+                        }
+                    }
+                }
+                if !texts.is_empty() {
+                    let combined = texts.join("\n");
+                    ctx.copy_text(combined.clone());
+                    self.object_clip_mark = Some(combined.clone());
+                    let font = thai_default_font(&combined);
+                    self.annot_clipboard = Some(pdfcraft_engine::NewAnnotation {
+                        page,
+                        shape: pdfcraft_engine::Shape::TextBox { rect: rect_opt.unwrap_or([100.0, 700.0, 250.0, 750.0]), font_size: 12.0 },
+                        style: pdfcraft_engine::Style { color: [0.0, 0.0, 0.0], width: 1.0, opacity: 1.0, fill: None, font },
+                        contents: combined,
+                        author: self.comment_prefs.author.clone(),
+                    });
+                    return true;
+                }
+                self.notify_error(e);
+                return false;
+            }
+        };
+        let text = clip.text();
+        if !text.is_empty() {
+            ctx.copy_text(text.clone());
+            self.object_clip_mark = Some(text.clone());
+            let rect = clip.rect();
+            let font = thai_default_font(&text);
+            self.annot_clipboard = Some(pdfcraft_engine::NewAnnotation {
+                page,
+                shape: pdfcraft_engine::Shape::TextBox { rect, font_size: 12.0 },
+                style: pdfcraft_engine::Style { color: [0.0, 0.0, 0.0], width: 1.0, opacity: 1.0, fill: None, font },
+                contents: text,
+                author: self.comment_prefs.author.clone(),
+            });
+        }
+        self.object_clipboard = Some(pdfcraft_engine::ObjectClipboard::new(clip));
+        if cut && let Some(delete) = pdfcraft_engine::Edit::delete_objects(page, targets) {
+            self.apply_edit(delete);
+        }
+        true
+    }
+
+    /// ⌘V in Edit a PDF: the copied objects onto the current page of tab `i`, as page content
+    /// that draws the same (one undo step), and selected.
+    pub(crate) fn paste_objects(&mut self, i: usize) -> bool {
+        let Some((id, page)) = self.views.get(i).map(|v| (v.id, v.current)) else { return false };
+        let (Some(doc), Some(clipboard)) = (self.session.get(id), self.object_clipboard.as_mut()) else { return false };
+        if !doc.allows_modification() {
+            self.notify_error(tl!("The document's security settings don't allow this change"));
+            return false;
+        }
+        let before = doc.editable_objects(page).unwrap_or_default();
+        let edit = match clipboard.paste(doc, page) {
+            Ok(edit) => edit,
+            Err(e) => {
+                self.notify_error(e);
+                return false;
+            }
+        };
+        if !self.apply_edit(edit) {
+            return false;
+        }
+        if let (Some(Ok(after)), Some(view)) = (self.session.get(id).map(|d| d.editable_objects(page)), self.views.get_mut(i)) {
+            view.objects.select_pasted(page, &before, after);
+        }
+        true
+    }
+
     /// Shared permission gate for copying selected page text from menus and keyboard events.
     pub(crate) fn copy_selected_text(&mut self, i: usize, ctx: &egui::Context) -> bool {
         let Some((id, text)) = self.views.get(i).and_then(|v| Some((v.id, v.selected_text()?))).filter(|(_, text)| !text.is_empty()) else {
@@ -3209,7 +3354,40 @@ impl PdfCraftApp {
         if !self.may_copy(id) {
             return false;
         }
-        ctx.copy_text(text);
+        ctx.copy_text(text.clone());
+        let (page, rect) = self
+            .session
+            .get(id)
+            .and_then(|doc| self.views.get(i)?.selection_quads(&doc.info))
+            .map(|(page, quads)| {
+                let mut rect = [100.0_f64, 700.0, 250.0, 750.0];
+                if let Some(first) = quads.first() {
+                    let mut r = [first[0], first[1], first[0], first[1]];
+                    for q in &quads {
+                        for k in (0..8).step_by(2) {
+                            if let (Some(&x), Some(&y)) = (q.get(k), q.get(k + 1)) {
+                                r[0] = r[0].min(x);
+                                r[1] = r[1].min(y);
+                                r[2] = r[2].max(x);
+                                r[3] = r[3].max(y);
+                            }
+                        }
+                    }
+                    rect = [r[0], r[1], (r[2] + 6.0).max(r[0] + 40.0), (r[3] + 2.0).max(r[1] + 18.0)];
+                }
+                (page, rect)
+            })
+            .unwrap_or((self.views.get(i).map_or(0, |v| v.current), [100.0, 700.0, 250.0, 750.0]));
+        self.object_clipboard = None;
+        self.object_clip_mark = None;
+        let font = thai_default_font(&text);
+        self.annot_clipboard = Some(pdfcraft_engine::NewAnnotation {
+            page,
+            shape: pdfcraft_engine::Shape::TextBox { rect, font_size: 12.0 },
+            style: pdfcraft_engine::Style { color: [0.0, 0.0, 0.0], width: 1.0, opacity: 1.0, fill: None, font },
+            contents: text,
+            author: self.comment_prefs.author.clone(),
+        });
         true
     }
 

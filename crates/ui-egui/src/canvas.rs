@@ -1116,7 +1116,25 @@ impl DocView {
 
     /// Pages drawn last frame and their screen rectangles.
     pub fn visible_page_rects(&self) -> Vec<(usize, Rect)> {
-        self.screen_xforms.iter().map(|(p, xf)| (*p, xf.rect)).collect()
+        self.screen_rects.clone()
+    }
+
+    /// Source page of an active drag, if any.
+    pub(crate) fn active_drag_page(&self) -> Option<usize> {
+        self.block_drag
+            .as_ref()
+            .map(|d| d.page())
+            .or_else(|| self.objects.drag_page())
+            .or_else(|| self.content.drag_page())
+            .or_else(|| self.image_selection.as_ref().filter(|s| s.dragging()).map(|s| s.page))
+    }
+
+    /// Whether an object, text box, or image move drag should auto-scroll near viewport edges.
+    pub(crate) fn is_edge_scroll_drag(&self) -> bool {
+        self.block_drag.as_ref().is_some_and(|d| d.is_moving())
+            || self.objects.drag_page().is_some()
+            || self.content.is_moving()
+            || self.image_selection.as_ref().is_some_and(|s| s.is_moving())
     }
 
     /// Where `page` is drawn this frame, with its coordinate mapping.
@@ -2509,14 +2527,118 @@ impl PageXform {
 
     /// Draw a texture covering the normalised page region, rotated with the view.
     pub fn paint_image(&self, painter: &egui::Painter, tex: egui::TextureId, u0: f32, v0: f32, u1: f32, v1: f32) {
+        self.paint_image_region(painter, tex, u0, v0, u1, v1, 0.0, 0.0, 1.0, 1.0);
+    }
+
+    /// Draw a sub-rectangle of a texture (`tu0..tu1`, `tv0..tv1`) mapped onto the normalised page
+    /// region (`pu0..pu1`, `pv0..pv1`), rotated with the view.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_image_region(
+        &self,
+        painter: &egui::Painter,
+        tex: egui::TextureId,
+        pu0: f32,
+        pv0: f32,
+        pu1: f32,
+        pv1: f32,
+        tu0: f32,
+        tv0: f32,
+        tu1: f32,
+        tv1: f32,
+    ) {
         let mut mesh = egui::Mesh::with_texture(tex);
-        let corners = [(u0, v0, 0.0, 0.0), (u1, v0, 1.0, 0.0), (u1, v1, 1.0, 1.0), (u0, v1, 0.0, 1.0)];
+        let corners = [(pu0, pv0, tu0, tv0), (pu1, pv0, tu1, tv0), (pu1, pv1, tu1, tv1), (pu0, pv1, tu0, tv1)];
         for (u, v, tu, tv) in corners {
             mesh.vertices.push(egui::epaint::Vertex { pos: self.norm_to_screen(u, v), uv: pos2(tu, tv), color: Color32::WHITE });
         }
         mesh.add_triangle(0, 1, 2);
         mesh.add_triangle(0, 2, 3);
         painter.add(egui::Shape::mesh(mesh));
+    }
+
+    /// Draw a sub-rectangle of a whole-page raster texture, where UV space matches page normalized space.
+    pub fn paint_page_texture_rect(&self, painter: &egui::Painter, tex: egui::TextureId, u0: f32, v0: f32, u1: f32, v1: f32) {
+        self.paint_image_region(painter, tex, u0, v0, u1, v1, u0, v0, u1, v1);
+    }
+}
+
+/// Paints `tex` over the normalised page rectangle `[u0, v0]..[u1, v1]`, omitting `suppress` (the
+/// source box of an actively dragged image) so the paper surface shows cleanly underneath on both
+/// full-page rasters and high-zoom tiles.
+#[allow(clippy::too_many_arguments)]
+fn paint_image_suppressed(
+    xf: &PageXform,
+    painter: &egui::Painter,
+    tex: egui::TextureId,
+    u0: f32,
+    v0: f32,
+    u1: f32,
+    v1: f32,
+    suppress: Option<[f32; 4]>,
+    is_full_page_tex: bool,
+) {
+    let Some([su0, sv0, su1, sv1]) = suppress else {
+        if is_full_page_tex {
+            xf.paint_page_texture_rect(painter, tex, u0, v0, u1, v1);
+        } else {
+            xf.paint_image(painter, tex, u0, v0, u1, v1);
+        }
+        return;
+    };
+    let iu0 = u0.max(su0);
+    let iu1 = u1.min(su1);
+    let iv0 = v0.max(sv0);
+    let iv1 = v1.min(sv1);
+    if iu0 >= iu1 || iv0 >= iv1 {
+        if is_full_page_tex {
+            xf.paint_page_texture_rect(painter, tex, u0, v0, u1, v1);
+        } else {
+            xf.paint_image(painter, tex, u0, v0, u1, v1);
+        }
+        return;
+    }
+    let map_uv = |pu: f32, pv: f32| -> (f32, f32) {
+        if is_full_page_tex {
+            (pu, pv)
+        } else {
+            let du = (u1 - u0).max(1e-6);
+            let dv = (v1 - v0).max(1e-6);
+            ((pu - u0) / du, (pv - v0) / dv)
+        }
+    };
+    let draw_strip = |pu0: f32, pv0: f32, pu1: f32, pv1: f32| {
+        if pu1 <= pu0 || pv1 <= pv0 {
+            return;
+        }
+        let (tu0, tv0) = map_uv(pu0, pv0);
+        let (tu1, tv1) = map_uv(pu1, pv1);
+        xf.paint_image_region(painter, tex, pu0, pv0, pu1, pv1, tu0, tv0, tu1, tv1);
+    };
+
+    if iv0 > v0 {
+        draw_strip(u0, v0, u1, iv0);
+    }
+    if v1 > iv1 {
+        draw_strip(u0, iv1, u1, v1);
+    }
+    if iu0 > u0 {
+        draw_strip(u0, iv0, iu0, iv1);
+    }
+    if u1 > iu1 {
+        draw_strip(iu1, iv0, u1, iv1);
+    }
+}
+
+/// Images parsed once per page and document edit generation, shared by canvas suppression and menus.
+fn cached_edit_images(view: &mut DocView, doc: &pdfcraft_engine::Document, page: usize) -> Vec<pdfcraft_engine::PageImage> {
+    let generation = doc.edit_generation();
+    match view.edit_images.get(&page) {
+        Some((g, l)) if *g == generation => l.clone(),
+        _ => {
+            let l = doc.page_images(page);
+            view.edit_images.insert(page, (generation, l.clone()));
+            l
+        }
     }
 }
 
@@ -2828,11 +2950,15 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         Vec2::ZERO
     };
 
-    // Drawing a comment: the pointer in a band along any edge (or just past it) scrolls the view
-    // that way, so a point beyond what is shown can be reached without letting go of the tool.
+    // Drawing a comment: pointer near an edge scrolls the view so strokes can cross off-screen.
+    // Dragging an object/block/image/added content: keep the viewport still near inner edges and
+    // scroll only vertically when the pointer moves past the top or bottom of the continuous view.
     let edge_delta = if unobstructed && matches!(view.comments.gesture, Some(comments::Gesture::Draw { .. })) {
         let (pointer, dt) = ui.input(|i| (if i.pointer.any_down() { i.pointer.latest_pos() } else { i.pointer.hover_pos() }, i.stable_dt));
         crate::autoscroll::edge_scroll(pointer, avail, dt)
+    } else if unobstructed && view.continuous && view.is_edge_scroll_drag() {
+        let (pointer, dt) = ui.input(|i| (i.pointer.interact_pos().or_else(|| i.pointer.latest_pos()), i.stable_dt));
+        crate::autoscroll::outside_vertical_edge_scroll(pointer, avail, dt)
     } else {
         Vec2::ZERO
     };
@@ -3105,6 +3231,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     let allowed = doc.allows_annotation();
     let can_copy = doc.allows_copying();
     let mut copy_selected = false;
+    let mut paste_selected = false;
     let comments_hidden = doc.comments_hidden();
     let form = doc.form.clone();
     let generation = doc.edit_generation();
@@ -3163,7 +3290,37 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         view.prepare.selected = None;
     }
     view.objects.prepare(doc, tool == QuickTool::EditText && can_modify, ui.ctx());
-    view.text_background.prepare(ui.ctx(), doc, view.line_editor.as_ref(), view.content.draft.as_ref(), scale);
+    let active_text = view
+        .block_drag
+        .as_ref()
+        .filter(|d| d.is_moving())
+        .map(|d| {
+            let rect = view
+                .edit_lines
+                .get(&d.page())
+                .and_then(|(_, ls)| ls.get(d.block()))
+                .map(|l| l.rect.map(|v| v as f32));
+            (d.page(), d.block(), rect, true)
+        })
+        .or_else(|| {
+            view.objects
+                .single_text_block()
+                .map(|(page, block, rect)| (page, block, Some(rect), view.objects.active_text_drag_block(page).is_some()))
+        });
+    let (active_block, active_rect, block_dragging) = match active_text {
+        Some((p, b, r, dragging)) => (Some((p, b)), r, dragging),
+        None => (None, None, false),
+    };
+    view.text_background.prepare(
+        ui.ctx(),
+        doc,
+        view.line_editor.as_ref(),
+        view.content.draft.as_ref(),
+        active_block,
+        active_rect,
+        block_dragging,
+        scale,
+    );
     let added = if editing_content { doc.added().to_vec() } else { Vec::new() };
     let doc_links = if tool == QuickTool::Link { doc.links().to_vec() } else { Vec::new() };
     if editing_content {
@@ -3186,7 +3343,13 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
             scroll = scroll.vertical_scroll_offset((r.top() - y_shift + fy * r.height() - rel.y).clamp(0.0, max_y));
         }
     }
-    let selection_wheel = view.selection_drag && navigation_enabled && unobstructed && !single_paging && ui.rect_contains_pointer(avail);
+    let selection_wheel = (view.selection_drag || view.is_edge_scroll_drag())
+        && navigation_enabled
+        && unobstructed
+        && !single_paging
+        && ui.rect_contains_pointer(avail);
+    let has_object_clipboard = app.object_clipboard.is_some();
+    let has_annot_clipboard = app.annot_clipboard.is_some();
     let out = page_scroll(ui, scroll, egui::Id::new(("page-view-scope", view.id)), |ui, viewport| {
         // egui's drag responses accept every pointer button. Keep a wheel gesture from also
         // selecting text, drawing a mark, or panning with the Hand tool.
@@ -3206,7 +3369,12 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         if delta != Vec2::ZERO && delta.is_finite() {
             ui.scroll_with_delta_animation(delta, egui::style::ScrollAnimation::none());
         }
-        let (resp_rect, resp) = ui.allocate_exact_size(vec2(content_w, content_h), Sense::click_and_drag());
+        // A resized handle can sit in the window beside a page that does not fill it. The
+        // response has to cover that visible area or the next press never starts: the pointer
+        // is reported only inside this rectangle once the previous drag has been released.
+        // Page positions stay on `content_w`/`content_h`; the extra area is not a new page.
+        let response_size = vec2(content_w.max(viewport.width()), content_h.max(viewport.height()));
+        let (resp_rect, resp) = ui.allocate_exact_size(response_size, Sense::click_and_drag());
         view.page_widget = Some(resp.id);
         // A drag lasts only while egui reports it, so the mark can't outlive one.
         if !resp.dragged_by(egui::PointerButton::Primary) {
@@ -3225,8 +3393,21 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         let visible = viewport.translate(resp_rect.min.to_vec2());
         let mut wanted = Vec::new();
         let mut visible_now = Vec::new();
+        let dragging_page = view.active_drag_page();
         view.screen_rects.clear();
         view.screen_xforms.clear();
+        for &i in &visible_pages {
+            let r = snap_to_pixels(rects[i].translate(origin.to_vec2()), ppp);
+            let on_screen = r.intersects(visible);
+            if on_screen {
+                visible_now.push(i);
+                view.screen_rects.push((i, r));
+            }
+            if on_screen || dragging_page == Some(i) {
+                view.screen_xforms
+                    .push((i, PageXform { rect: r, rot: view.rotation, pw: info.pages[i].width.max(1.0), ph: info.pages[i].height.max(1.0) }));
+            }
+        }
         // Visible heights (points) closer than this are equal: one page size can meet the
         // viewport a fraction of a point differently once the scroll offset is applied.
         const TIE: f32 = 0.5;
@@ -3248,17 +3429,12 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         for &i in &visible_pages {
             badge_hover = None;
             let r = snap_to_pixels(rects[i].translate(origin.to_vec2()), ppp);
-            if !r.intersects(visible.expand(400.0)) {
+            let in_draw_band = r.intersects(visible.expand(400.0));
+            if !in_draw_band && dragging_page != Some(i) {
                 continue;
             }
             if pressed && pressed_page.is_none() && pointer.is_some_and(|p| r.contains(p)) {
                 pressed_page = Some(i);
-            }
-            if r.intersects(visible) {
-                visible_now.push(i);
-                view.screen_rects.push((i, r));
-                view.screen_xforms
-                    .push((i, PageXform { rect: r, rot: view.rotation, pw: info.pages[i].width.max(1.0), ph: info.pages[i].height.max(1.0) }));
             }
             let overlap = r.intersect(visible).height();
             if i == view.current {
@@ -3272,132 +3448,191 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                 current = i;
             }
             let xf = PageXform { rect: r, rot: view.rotation, pw: info.pages[i].width.max(1.0), ph: info.pages[i].height.max(1.0) };
-            // Shadows would darken the preceding page when pages touch.
-            if view.show_page_gaps {
-                painter.add(egui::epaint::Shadow { offset: [0, 3], blur: 14, spread: 0, color: t.page_shadow }.as_shape(r, CornerRadius::ZERO));
-            }
-            painter.rect_filled(r, CornerRadius::ZERO, paper);
-            if let Some(err) = view.errors.get(&i) {
-                painter.rect_filled(r, CornerRadius::ZERO, Color32::from_rgb(0xFB, 0xF4, 0xF4));
-                icons::paint(
-                    ui,
-                    Rect::from_center_size(r.center() - vec2(0.0, 26.0), vec2(28.0, 28.0)),
-                    "triangle-alert",
-                    26.0,
-                    Color32::from_rgb(0xC8, 0x3A, 0x3A),
-                );
-                let message = crate::i18n::fmt(tl!("This page couldn't be displayed.\n{e}"), &[("e", err)]);
-                let msg =
-                    ui.fonts_mut(|f| f.layout(message, theme::regular(12.5), Color32::from_rgb(0x6A, 0x2A, 0x2A), (r.width() - 40.0).max(80.0)));
-                painter.galley(pos2(r.center().x - msg.size().x / 2.0, r.center().y), msg, Color32::BLACK);
-            } else {
-                let (pw_pt, ph_pt) = (info.pages[i].width.max(1.0), info.pages[i].height.max(1.0));
-                // A GPU may take smaller textures than these (OpenGL drivers report as little as
-                // 2048 pixels, and uploading a bigger one aborts), so both stay within its limit.
-                let max_side = ui.ctx().input(|inp| inp.max_texture_side) as f32;
-                let tiled = pw_pt.max(ph_pt) * scale > TILE_THRESHOLD.min(max_side);
-                // Whole-page raster: sharp when small, a low-res backdrop when tiled.
-                let (want_scale, want_tag) = if tiled {
-                    let bs = BASE_SIDE.min(max_side) / pw_pt.max(ph_pt);
-                    (bs, scale_tag(bs))
+            if in_draw_band {
+                // Shadows would darken the preceding page when pages touch.
+                if view.show_page_gaps {
+                    painter.add(egui::epaint::Shadow { offset: [0, 3], blur: 14, spread: 0, color: t.page_shadow }.as_shape(r, CornerRadius::ZERO));
+                }
+                painter.rect_filled(r, CornerRadius::ZERO, paper);
+                if let Some(err) = view.errors.get(&i) {
+                    painter.rect_filled(r, CornerRadius::ZERO, Color32::from_rgb(0xFB, 0xF4, 0xF4));
+                    icons::paint(
+                        ui,
+                        Rect::from_center_size(r.center() - vec2(0.0, 26.0), vec2(28.0, 28.0)),
+                        "triangle-alert",
+                        26.0,
+                        Color32::from_rgb(0xC8, 0x3A, 0x3A),
+                    );
+                    let message = crate::i18n::fmt(tl!("This page couldn't be displayed.\n{e}"), &[("e", err)]);
+                    let msg =
+                        ui.fonts_mut(|f| f.layout(message, theme::regular(12.5), Color32::from_rgb(0x6A, 0x2A, 0x2A), (r.width() - 40.0).max(80.0)));
+                    painter.galley(pos2(r.center().x - msg.size().x / 2.0, r.center().y), msg, Color32::BLACK);
                 } else {
-                    (scale, tag)
-                };
-                // Under tiles, a whole-page raster sharper than the backdrop (from before the page
-                // grew past the tiling size) is a better backdrop: keep demanding it as it is.
-                match view.pages.get(&i).filter(|p| tiled && p.tag != STALE_TAG && tag_scale(p.tag) >= want_scale) {
-                    Some(p) => wanted.push((i, tag_scale(p.tag), p.tag, None)),
-                    None => wanted.push((i, want_scale, want_tag, None)),
-                }
-                match view.pages.get(&i) {
-                    Some(p) => {
-                        if !tiled && p.tag == want_tag {
-                            xf.texel_aligned(p.tex.size(), ppp).paint_image(painter, p.tex.id(), 0.0, 0.0, 1.0, 1.0);
+                    let (pw_pt, ph_pt) = (info.pages[i].width.max(1.0), info.pages[i].height.max(1.0));
+                    // A GPU may take smaller textures than these (OpenGL drivers report as little as
+                    // 2048 pixels, and uploading a bigger one aborts), so both stay within its limit.
+                    let max_side = ui.ctx().input(|inp| inp.max_texture_side) as f32;
+                    let tiled = pw_pt.max(ph_pt) * scale > TILE_THRESHOLD.min(max_side);
+                    // Whole-page raster: sharp when small, a low-res backdrop when tiled.
+                    let (want_scale, want_tag) = if tiled {
+                        let bs = BASE_SIDE.min(max_side) / pw_pt.max(ph_pt);
+                        (bs, scale_tag(bs))
+                    } else {
+                        (scale, tag)
+                    };
+                    // Under tiles, a whole-page raster sharper than the backdrop (from before the page
+                    // grew past the tiling size) is a better backdrop: keep demanding it as it is.
+                    match view.pages.get(&i).filter(|p| tiled && p.tag != STALE_TAG && tag_scale(p.tag) >= want_scale) {
+                        Some(p) => wanted.push((i, tag_scale(p.tag), p.tag, None)),
+                        None => wanted.push((i, want_scale, want_tag, None)),
+                    }
+                    let active_drag_suppress = if let Some(sel) = view.image_selection.clone()
+                        && sel.page == i
+                        && sel.is_suppressing_source()
+                    {
+                        let images = cached_edit_images(view, doc, i);
+                        if let Some(vis) = images.get(sel.index).and_then(|im| im.visible_rect.or(Some(im.rect))) {
+                            let b = xf.user_rect(info, i, vis.map(|v| v as f32));
+                            let uvs = [b.left_top(), b.right_top(), b.right_bottom(), b.left_bottom()].map(|c| xf.screen_to_norm(c));
+                            let u0 = uvs.iter().map(|(u, _)| *u).fold(1.0f32, f32::min).clamp(0.0, 1.0);
+                            let u1 = uvs.iter().map(|(u, _)| *u).fold(0.0f32, f32::max).clamp(0.0, 1.0);
+                            let v0 = uvs.iter().map(|(_, v)| *v).fold(1.0f32, f32::min).clamp(0.0, 1.0);
+                            let v1 = uvs.iter().map(|(_, v)| *v).fold(0.0f32, f32::max).clamp(0.0, 1.0);
+                            if u1 > u0 && v1 > v0 { Some([u0, v0, u1, v1]) } else { None }
                         } else {
-                            // A backdrop, or a raster at an older scale until the new one arrives.
-                            xf.paint_image(painter, p.tex.id(), 0.0, 0.0, 1.0, 1.0);
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    match view.pages.get(&i) {
+                        Some(p) => {
+                            if !tiled && p.tag == want_tag {
+                                paint_image_suppressed(
+                                    &xf.texel_aligned(p.tex.size(), ppp),
+                                    painter,
+                                    p.tex.id(),
+                                    0.0,
+                                    0.0,
+                                    1.0,
+                                    1.0,
+                                    active_drag_suppress,
+                                    true,
+                                );
+                            } else {
+                                // A backdrop, or a raster at an older scale until the new one arrives.
+                                paint_image_suppressed(&xf, painter, p.tex.id(), 0.0, 0.0, 1.0, 1.0, active_drag_suppress, true);
+                            }
+                        }
+                        None => {
+                            let now = ui.input(|inp| inp.time);
+                            let since = *view.waiting_since.entry(i).or_insert(now);
+                            let msg = if now - since > 6.0 { "Still rendering — this page is unusually complex…" } else { "Rendering…" };
+                            painter.text(r.center(), Align2::CENTER_CENTER, tl!(msg), theme::regular(12.0), t.text_faint);
                         }
                     }
-                    None => {
-                        let now = ui.input(|inp| inp.time);
-                        let since = *view.waiting_since.entry(i).or_insert(now);
-                        let msg = if now - since > 6.0 { "Still rendering — this page is unusually complex…" } else { "Rendering…" };
-                        painter.text(r.center(), Align2::CENTER_CENTER, tl!(msg), theme::regular(12.0), t.text_faint);
-                    }
-                }
-                if tiled && r.intersects(visible) {
-                    // Device-pixel geometry of the scaled page, and the visible part of it
-                    // (found by mapping the visible screen corners back into the page). Sides round
-                    // up as whole-page rasters do, so the last partial row and column get tiles.
-                    let (dw, dh) = (device_pixels(pw_pt, scale), device_pixels(ph_pt, scale));
-                    // Adaptive tile side for this zoom and page, within the GPU texture limit:
-                    // a zoomed viewport or a giant sheet is covered by a few large tiles
-                    // instead of many small ones, and each tile costs one full page interpret.
-                    // Never zero (u32 division below).
-                    let ts = tile_side(scale, dw.max(dh)).min(max_side as u32).max(64);
-                    let vis = r.intersect(visible);
-                    let corners = [vis.left_top(), vis.right_top(), vis.right_bottom(), vis.left_bottom()].map(|c| xf.screen_to_norm(c));
-                    let (u0, u1) = corners.iter().fold((1.0f32, 0.0f32), |(a, b), c| (a.min(c.0), b.max(c.0)));
-                    let (v0, v1) = corners.iter().fold((1.0f32, 0.0f32), |(a, b), c| (a.min(c.1), b.max(c.1)));
-                    let (vx0, vy0) = ((u0.max(0.0) * dw as f32) as u32, (v0.max(0.0) * dh as f32) as u32);
-                    let (vx1, vy1) = (((u1.min(1.0) * dw as f32).ceil() as u32).min(dw), ((v1.min(1.0) * dh as f32).ceil() as u32).min(dh));
-                    // Tiles of earlier zooms first, stretched, the nearest scale last (on top):
-                    // until the current tiles arrive, a zoom shows them rather than the backdrop.
-                    let mut older: Vec<(f32, u32, u32, &TextureHandle)> = view
-                        .tiles
-                        .iter()
-                        .filter(|((p, t, _, _), _)| *p == i && *t != tag)
-                        .map(|((_, t, ox, oy), tex)| (tag_scale(*t), *ox, *oy, tex))
-                        .collect();
-                    older.sort_by(|a, b| (b.0 / scale).ln().abs().total_cmp(&(a.0 / scale).ln().abs()));
-                    for (s, ox, oy, tex) in older {
-                        let (ow, oh) = (device_pixels(pw_pt, s) as f32, device_pixels(ph_pt, s) as f32);
-                        let [w, h] = tex.size();
-                        let (x, y) = (ox as f32, oy as f32);
-                        xf.paint_image(painter, tex.id(), x / ow, y / oh, (x + w as f32) / ow, (y + h as f32) / oh);
-                    }
-                    // Visible tiles, nearest the viewport centre first: each tile costs a full
-                    // page interpret, so the workers sharpen what is looked at before the edges.
-                    let (vcx, vcy) = ((vx0 + vx1) as f32 / 2.0, (vy0 + vy1) as f32 / 2.0);
-                    let mut coords: Vec<(u32, u32)> = Vec::new();
-                    for ty in vy0 / ts..=(vy1.saturating_sub(1)) / ts {
-                        for tx in vx0 / ts..=(vx1.saturating_sub(1)) / ts {
-                            coords.push((tx, ty));
-                        }
-                    }
-                    coords.sort_by(|a, b| {
-                        let da = ((a.0 * ts + ts / 2) as f32 - vcx).abs() + ((a.1 * ts + ts / 2) as f32 - vcy).abs();
-                        let db = ((b.0 * ts + ts / 2) as f32 - vcx).abs() + ((b.1 * ts + ts / 2) as f32 - vcy).abs();
-                        da.total_cmp(&db)
-                    });
-                    for (tx, ty) in coords {
-                        let (x, y) = (tx * ts, ty * ts);
-                        let (w, h) = (ts.min(dw.saturating_sub(x)), ts.min(dh.saturating_sub(y)));
-                        if w == 0 || h == 0 {
-                            continue;
-                        }
-                        wanted.push((i, scale, tag, Some(Tile { x, y, w, h })));
-                        if let Some(tex) = view.tiles.get(&(i, tag, x, y)) {
-                            let (fw, fh) = (dw as f32, dh as f32);
-                            xf.texel_aligned([dw as usize, dh as usize], ppp).paint_image(
+                    if tiled && r.intersects(visible) {
+                        // Device-pixel geometry of the scaled page, and the visible part of it
+                        // (found by mapping the visible screen corners back into the page). Sides round
+                        // up as whole-page rasters do, so the last partial row and column get tiles.
+                        let (dw, dh) = (device_pixels(pw_pt, scale), device_pixels(ph_pt, scale));
+                        // Adaptive tile side for this zoom and page, within the GPU texture limit:
+                        // a zoomed viewport or a giant sheet is covered by a few large tiles
+                        // instead of many small ones, and each tile costs one full page interpret.
+                        // Never zero (u32 division below).
+                        let ts = tile_side(scale, dw.max(dh)).min(max_side as u32).max(64);
+                        let vis = r.intersect(visible);
+                        let corners = [vis.left_top(), vis.right_top(), vis.right_bottom(), vis.left_bottom()].map(|c| xf.screen_to_norm(c));
+                        let (u0, u1) = corners.iter().fold((1.0f32, 0.0f32), |(a, b), c| (a.min(c.0), b.max(c.0)));
+                        let (v0, v1) = corners.iter().fold((1.0f32, 0.0f32), |(a, b), c| (a.min(c.1), b.max(c.1)));
+                        let (vx0, vy0) = ((u0.max(0.0) * dw as f32) as u32, (v0.max(0.0) * dh as f32) as u32);
+                        let (vx1, vy1) = (((u1.min(1.0) * dw as f32).ceil() as u32).min(dw), ((v1.min(1.0) * dh as f32).ceil() as u32).min(dh));
+                        // Tiles of earlier zooms first, stretched, the nearest scale last (on top):
+                        // until the current tiles arrive, a zoom shows them rather than the backdrop.
+                        let mut older: Vec<(f32, u32, u32, &TextureHandle)> = view
+                            .tiles
+                            .iter()
+                            .filter(|((p, t, _, _), _)| *p == i && *t != tag)
+                            .map(|((_, t, ox, oy), tex)| (tag_scale(*t), *ox, *oy, tex))
+                            .collect();
+                        older.sort_by(|a, b| (b.0 / scale).ln().abs().total_cmp(&(a.0 / scale).ln().abs()));
+                        for (s, ox, oy, tex) in older {
+                            let (ow, oh) = (device_pixels(pw_pt, s) as f32, device_pixels(ph_pt, s) as f32);
+                            let [w, h] = tex.size();
+                            let (x, y) = (ox as f32, oy as f32);
+                            paint_image_suppressed(
+                                &xf,
                                 painter,
                                 tex.id(),
-                                x as f32 / fw,
-                                y as f32 / fh,
-                                (x + w) as f32 / fw,
-                                (y + h) as f32 / fh,
+                                x / ow,
+                                y / oh,
+                                (x + w as f32) / ow,
+                                (y + h as f32) / oh,
+                                active_drag_suppress,
+                                false,
                             );
+                        }
+                        // Visible tiles, nearest the viewport centre first: each tile costs a full
+                        // page interpret, so the workers sharpen what is looked at before the edges.
+                        let (vcx, vcy) = ((vx0 + vx1) as f32 / 2.0, (vy0 + vy1) as f32 / 2.0);
+                        let mut coords: Vec<(u32, u32)> = Vec::new();
+                        for ty in vy0 / ts..=(vy1.saturating_sub(1)) / ts {
+                            for tx in vx0 / ts..=(vx1.saturating_sub(1)) / ts {
+                                coords.push((tx, ty));
+                            }
+                        }
+                        coords.sort_by(|a, b| {
+                            let da = ((a.0 * ts + ts / 2) as f32 - vcx).abs() + ((a.1 * ts + ts / 2) as f32 - vcy).abs();
+                            let db = ((b.0 * ts + ts / 2) as f32 - vcx).abs() + ((b.1 * ts + ts / 2) as f32 - vcy).abs();
+                            da.total_cmp(&db)
+                        });
+                        for (tx, ty) in coords {
+                            let (x, y) = (tx * ts, ty * ts);
+                            let (w, h) = (ts.min(dw.saturating_sub(x)), ts.min(dh.saturating_sub(y)));
+                            if w == 0 || h == 0 {
+                                continue;
+                            }
+                            wanted.push((i, scale, tag, Some(Tile { x, y, w, h })));
+                            if let Some(tex) = view.tiles.get(&(i, tag, x, y)) {
+                                let (fw, fh) = (dw as f32, dh as f32);
+                                paint_image_suppressed(
+                                    &xf.texel_aligned([dw as usize, dh as usize], ppp),
+                                    painter,
+                                    tex.id(),
+                                    x as f32 / fw,
+                                    y as f32 / fh,
+                                    (x + w) as f32 / fw,
+                                    (y + h) as f32 / fh,
+                                    active_drag_suppress,
+                                    false,
+                                );
+                            }
                         }
                     }
                 }
-            }
-            view.text_background.paint(painter, &xf, i, view.line_editor.as_ref(), view.content.draft.as_ref());
-            if editing_content {
-                let page_tex = view.pages.get(&i).map(|p| p.tex.id());
-                view.move_background.paint(ui, painter, &xf, i, info, &view.content, page_tex);
-            }
-            if view.show_page_gaps {
-                painter.rect_stroke(r, CornerRadius::ZERO, Stroke::new(0.5, t.border.gamma_multiply(0.8)), egui::StrokeKind::Outside);
+                let dragging_text_block = view
+                    .block_drag
+                    .as_ref()
+                    .filter(|d| d.page() == i && d.is_moving())
+                    .map(|d| d.block())
+                    .or_else(|| view.objects.active_text_drag_block(i));
+                view.text_background.paint(
+                    painter,
+                    &xf,
+                    i,
+                    info,
+                    view.line_editor.as_ref(),
+                    view.content.draft.as_ref(),
+                    dragging_text_block,
+                    view.page_raster(i),
+                );
+                if editing_content {
+                    let page_tex = view.pages.get(&i).map(|p| p.tex.id());
+                    view.move_background.paint(ui, painter, &xf, i, info, &view.content, page_tex);
+                }
+                if view.show_page_gaps {
+                    painter.rect_stroke(r, CornerRadius::ZERO, Stroke::new(0.5, t.border.gamma_multiply(0.8)), egui::StrokeKind::Outside);
+                }
             }
 
             // Comments: tools, selection, moving and resizing come before text selection.
@@ -3465,6 +3700,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                     info,
                     ft,
                     app.fill_text_size,
+                    &app.fill_text_font,
                     view,
                     signature.as_ref(),
                     initials.as_ref(),
@@ -3531,9 +3767,24 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                 };
                 crate::redact_ui::page_input(ui, &resp, &xf, i, info, over_text, view)
             };
-            let image_owns_pointer = tool == QuickTool::EditText && crate::edit_text_ui::image_owns_pointer(ui, &xf, i, info, view);
-            let on_objects =
-                !image_owns_pointer && tool == QuickTool::EditText && can_modify && crate::object_ui::page_input(ui, &resp, &xf, i, doc, view);
+            let drag_elsewhere = dragging_page.is_some_and(|dp| dp != i);
+            let block_drag_active = view.block_drag.is_some();
+            let image_drag_active = view.image_selection.as_ref().is_some_and(|s| s.dragging());
+            let object_drag_active = view.objects.drag_page().is_some();
+            let content_drag_active = view.content.drag_page().is_some();
+            let image_owns_pointer = !drag_elsewhere
+                && !block_drag_active
+                && !object_drag_active
+                && !content_drag_active
+                && tool == QuickTool::EditText
+                && crate::edit_text_ui::image_owns_pointer(ui, &xf, i, info, view);
+            let on_objects = !drag_elsewhere
+                && !block_drag_active
+                && !content_drag_active
+                && !image_owns_pointer
+                && tool == QuickTool::EditText
+                && can_modify
+                && crate::object_ui::page_input(ui, &resp, &xf, i, doc, view);
             let lines = if matches!(tool, QuickTool::AddText | QuickTool::EditText) && can_modify {
                 let generation = doc.edit_generation();
                 match view.edit_lines.get(&i) {
@@ -3547,11 +3798,20 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
             } else {
                 Vec::new()
             };
+            let source_probe = ui.input(|inp| inp.pointer.press_origin().filter(|_| inp.pointer.primary_down())).or(pointer);
             let over_source = tool == QuickTool::AddText
-                && pointer.is_some_and(|p| {
-                    !crate::content_ui::hits_added(&xf, info, i, &added, p)
-                        && lines.iter().any(|line| xf.user_rect(info, i, line.rect.map(|v| v as f32)).expand(2.0).contains(p))
-                });
+                && (view.block_drag.as_ref().is_some_and(|d| d.page() == i)
+                    || source_probe.is_some_and(|p| {
+                        let over_open_editor = view.line_editor.as_ref().filter(|e| e.page == i).is_some_and(|e| {
+                            let r = xf.user_rect(info, i, e.source_rect).expand(2.0);
+                            crate::edit_text_ui::move_handle(r).expand(5.0).contains(p) || r.expand(10.0).contains(p)
+                        });
+                        !crate::content_ui::hits_added(&xf, info, i, &added, p)
+                            && !crate::content_ui::select_grabs(ui, &xf, i, info, &added, view)
+                            && (over_open_editor
+                                || lines.iter().any(|line| xf.user_rect(info, i, line.rect.map(|v| v as f32)).expand(2.0).contains(p))
+                                || crate::edit_text_ui::grabs_edge(&xf, info, i, lines.iter().map(|l| l.rect), p))
+                    }));
             let source_blocked = over_source && view.content.hold_blocked();
             if over_source && resp.clicked() && !source_blocked {
                 if let Some(edit) = view.content.finish_draft(&added) {
@@ -3559,14 +3819,14 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                 }
                 view.content.selected = None;
             }
-            let on_content = !on_objects && editing_content && can_modify && {
+            let on_content = !drag_elsewhere && !block_drag_active && !image_drag_active && !on_objects && editing_content && can_modify && {
                 source_blocked
                     || crate::content_ui::page_input(
                         ui,
                         &resp,
                         &xf,
                         i,
-                        info,
+                        doc,
                         &added,
                         tool == QuickTool::AddText && !over_source,
                         matches!(tool, QuickTool::AddText | QuickTool::EditText),
@@ -3582,30 +3842,33 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
             // instead of vanishing until the pointer comes back.
             let others_own_pointer = on_objects || on_content;
             let on_edit_text = (tool == QuickTool::EditText || over_source) && can_modify && {
-                let generation = doc.edit_generation();
-                let images = match view.edit_images.get(&i) {
-                    Some((g, l)) if *g == generation => l.clone(),
-                    _ => {
-                        let l = doc.page_images(i);
-                        view.edit_images.insert(i, (generation, l.clone()));
-                        l
-                    }
-                };
                 // Editable text takes precedence over background/overlapping artwork. Both
                 // inventories are painted every frame, even when text owns the pointer.
-                let text_used = crate::edit_text_ui::page_input(ui, &resp, &xf, i, doc, &lines, view, !others_own_pointer && !image_owns_pointer);
-                let image_used = crate::edit_text_ui::image_input(
+                let text_used = crate::edit_text_ui::page_input(
                     ui,
                     &resp,
                     &xf,
                     i,
-                    info,
-                    &images,
+                    doc,
+                    &lines,
                     view,
-                    &mut image_action,
-                    !others_own_pointer && (image_owns_pointer || !text_used),
+                    !drag_elsewhere && !image_drag_active && !others_own_pointer && !image_owns_pointer,
                 );
-                !others_own_pointer && (text_used || image_used)
+                let image_used = tool == QuickTool::EditText && {
+                    let images = cached_edit_images(view, doc, i);
+                    crate::edit_text_ui::image_input(
+                        ui,
+                        &resp,
+                        &xf,
+                        i,
+                        doc,
+                        &images,
+                        view,
+                        &mut image_action,
+                        !drag_elsewhere && !block_drag_active && !others_own_pointer && (image_owns_pointer || !text_used),
+                    )
+                };
+                !drag_elsewhere && !others_own_pointer && (text_used || image_used)
             };
             let on_link = tool == QuickTool::Link && can_modify && crate::link_ui::page_input(ui, &resp, &xf, i, info, &doc_links, view);
             if tool == QuickTool::Select
@@ -3615,6 +3878,11 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                 && let Some(l) = doc.links().iter().find(|l| l.page == i && crate::link_ui::screen_rect(&xf, info, i, l.rect).expand(2.0).contains(p))
             {
                 view.links.context = Some((i, l.index));
+            }
+            if resp.secondary_clicked()
+                && let Some(p) = pointer.filter(|p| xf.rect.contains(*p))
+            {
+                view.comments.context_at = Some((i, pcx.to_user(p)));
             }
             let consumed = on_objects || on_edit_text || on_link || on_content || boxing || on_field || comments::page_input(ui, &resp, &pcx, view);
 
@@ -3812,7 +4080,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                 crate::content_ui::paint_page(ui, painter, &xf, i, info, &added, view);
             }
             if tool == QuickTool::EditText {
-                crate::object_ui::paint(painter, &xf, i, info, &view.objects);
+                crate::object_ui::paint(painter, &xf, i, info, view);
             }
             if tool == QuickTool::EnhanceCamera {
                 crate::camera_ui::paint(painter, &xf, i, view);
@@ -3960,6 +4228,15 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                 hover_text = badge_hover.take();
             }
         }
+        {
+            let overlay_painter = painter.with_clip_rect(visible);
+            if editing_content {
+                crate::content_ui::paint_drag_overlay(ui, &overlay_painter, info, &added, view);
+            }
+            if (tool == QuickTool::EditText || view.block_drag.is_some()) && can_modify {
+                crate::edit_text_ui::paint_drag_overlay(ui, &overlay_painter, info, view);
+            }
+        }
         if calc_order {
             view.calc_order.set_hover_page(calc_hover);
             let selected = view.prepare.selected.as_ref().map(|(name, _)| name.as_str());
@@ -4077,10 +4354,43 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                 return;
             }
             if view.comments.selected.is_none() {
-                let selected = view.selected_text().is_some_and(|t| !t.is_empty());
-                let key = crate::commands::shortcut_label(ui.ctx(), crate::commands::COPY);
-                if ui.add_enabled(can_copy && selected, egui::Button::new(tl!("Copy")).shortcut_text(key)).clicked() {
+                let selected_text = view.selected_text().filter(|t| !t.is_empty());
+                let line_editor_text = view.line_editor.as_ref().and_then(|e| {
+                    if let Some(r) = &e.selection
+                        && let Some(sub) = e.text.get(r.clone())
+                        && !sub.is_empty()
+                    {
+                        Some(sub.to_string())
+                    } else if !e.text.is_empty() {
+                        Some(e.text.clone())
+                    } else {
+                        None
+                    }
+                });
+                let selected_obj = view.objects.selected_text(doc);
+                let selected_objects_text = selected_obj.as_ref().map(|(t, _)| t.clone());
+                let block_text_under_click = view.comments.context_at.and_then(|(page, at)| {
+                    doc.text_blocks(page)
+                        .iter()
+                        .find(|b| at[0] >= b.rect[0] - 8.0 && at[0] <= b.rect[2] + 8.0 && at[1] >= b.rect[1] - 8.0 && at[1] <= b.rect[3] + 8.0)
+                        .map(|b| b.text.clone())
+                });
+                let text_to_copy = selected_text.or(line_editor_text).or(selected_objects_text).or(block_text_under_click);
+                let has_selected_objects = view.objects.count() > 0
+                    || view.objects.selection().is_some()
+                    || view.image_selection.is_some()
+                    || view.content.selected.is_some();
+                let can_copy_now = can_copy && (text_to_copy.is_some() || has_selected_objects);
+                let key_copy = crate::commands::shortcut_label(ui.ctx(), crate::commands::COPY);
+                if ui.add_enabled(can_copy_now, egui::Button::new(tl!("Copy")).shortcut_text(key_copy)).clicked() {
                     copy_selected = true;
+                    ui.close();
+                }
+                let key_paste = crate::commands::shortcut_label(ui.ctx(), crate::commands::PASTE);
+                let can_paste_now = can_modify && (has_object_clipboard || has_annot_clipboard);
+                let paste_label = crate::i18n::t("Paste");
+                if ui.add_enabled(can_paste_now, egui::Button::new(paste_label).shortcut_text(key_paste)).clicked() {
+                    paste_selected = true;
                     ui.close();
                 }
                 ui.separator();
@@ -4113,7 +4423,10 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                     ui.separator();
                 }
             }
-            canvas_action = comments::context_menu(ui, view, info, prefs, allowed).or(copy_image);
+            let menu_action = comments::context_menu(ui, view, info, prefs, allowed).or(copy_image);
+            if canvas_action.is_none() {
+                canvas_action = menu_action;
+            }
         });
         (wanted, visible_now)
     });
@@ -4498,6 +4811,12 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     }
     if copy_selected {
         app.execute("edit.copy");
+    }
+    if paste_selected {
+        app.execute("edit.paste");
+    }
+    if let Some(cmd) = ui.ctx().data_mut(|d| d.remove_temp::<&'static str>(egui::Id::new("editor-context-cmd"))) {
+        app.execute(cmd);
     }
     // Read mode hides the tools (#2646), and full screen is the page and nothing else (#1459);
     // the quick tools come back with the window.
@@ -5276,6 +5595,21 @@ fn quick_bar(app: &mut PdfCraftApp, area: Rect, ui: &mut egui::Ui) {
                             }
                         });
                     if matches!(current_fill, Some(crate::fill_sign::FillTool::Text | crate::fill_sign::FillTool::Date)) {
+                        let current_font = if let Some((index, id)) = app.active_ids() {
+                            if let Some(tb) = app.views.get(index).and_then(|v| v.fill_text.as_ref()) {
+                                tb.font.clone()
+                            } else if let Some((page, annotation)) = app.views.get(index).and_then(|view| view.comments.selected)
+                                && let Some(doc) = app.session.get(id)
+                                && let Some(props) = doc.comment_props(page, annotation)
+                                && let Some(f) = props.font_family.filter(|f| !f.is_empty())
+                            {
+                                f
+                            } else {
+                                app.fill_text_font.clone()
+                            }
+                        } else {
+                            app.fill_text_font.clone()
+                        };
                         ui.label(tl!("Font size:"));
                         let size = ui.add(
                             egui::DragValue::new(&mut app.fill_text_size)
@@ -5283,23 +5617,71 @@ fn quick_bar(app: &mut PdfCraftApp, area: Rect, ui: &mut egui::Ui) {
                                 .speed(0.25)
                                 .suffix(" pt"),
                         );
-                        // #1274: the size also applies to the Fill & Sign text that is selected,
-                        // once per change (a typed value, or the end of a drag), so a drag adds
-                        // one undo step and not one per frame.
                         if ((size.changed() && !size.dragged()) || size.drag_stopped())
                             && let Some((index, id)) = app.active_ids()
-                            && let Some((page, annotation)) = app.views.get(index).and_then(|view| view.comments.selected)
-                            && app.session.get(id).is_some_and(|doc| {
-                                doc.allows_annotation()
-                                    && doc
-                                        .info
-                                        .annotations
-                                        .iter()
-                                        .any(|a| a.page == page && a.index == annotation && a.fill_sign && a.subtype == "FreeText" && !a.locked)
-                            })
                         {
-                            app.apply_edit(Edit::FontSizeAnnotation { page, index: annotation, size: app.fill_text_size });
+                            if let Some(view) = app.views.get_mut(index)
+                                && let Some(tb) = view.fill_text.as_mut()
+                            {
+                                tb.size = app.fill_text_size;
+                            }
+                            if let Some((page, annotation)) = app.views.get(index).and_then(|view| view.comments.selected)
+                                && app.session.get(id).is_some_and(|doc| {
+                                    doc.allows_annotation()
+                                        && doc
+                                            .info
+                                            .annotations
+                                            .iter()
+                                            .any(|a| a.page == page && a.index == annotation && a.subtype == "FreeText" && !a.locked)
+                                })
+                            {
+                                app.apply_edit(Edit::FontSizeAnnotation { page, index: annotation, size: app.fill_text_size });
+                            }
                         }
+                        let font_resp = ui.add(egui::Button::new(egui::RichText::new(&current_font).size(10.5)).min_size(vec2(34.0, 20.0)));
+                        let open_font = font_resp.clicked() || font_resp.secondary_clicked();
+                        egui::Popup::menu(&font_resp)
+                            .open_memory(open_font.then_some(egui::SetOpenCommand::Toggle))
+                            .align(egui::RectAlign::RIGHT_START)
+                            .gap(6.0)
+                            .show(|ui| {
+                                ui.label(egui::RichText::new(tl!("Font:")).strong());
+                                ui.separator();
+                                for (fam_name, label) in [
+                                    ("Sarabun", "Sarabun (สารบรรณ)"),
+                                    ("Angsana New", "Angsana New (อังศนา)"),
+                                    ("Cordia New", "Cordia New (คอร์เดีย)"),
+                                    ("Browallia New", "Browallia New (บราวเวลเลีย)"),
+                                    ("Noto Sans Thai", "Noto Sans Thai"),
+                                    ("IBM Plex Sans Thai", "IBM Plex Sans Thai"),
+                                ] {
+                                    let is_active = current_font == fam_name;
+                                    if ui.selectable_label(is_active, label).clicked() {
+                                        app.fill_text_font = fam_name.to_string();
+                                        if let Some((index, id)) = app.active_ids() {
+                                            if let Some(view) = app.views.get_mut(index)
+                                                && let Some(tb) = view.fill_text.as_mut()
+                                            {
+                                                tb.font = fam_name.to_string();
+                                            }
+                                            if let Some((page, annotation)) = app.views.get(index).and_then(|view| view.comments.selected)
+                                                && app.session.get(id).is_some_and(|doc| {
+                                                    doc.allows_annotation()
+                                                        && doc
+                                                            .info
+                                                            .annotations
+                                                            .iter()
+                                                            .any(|a| a.page == page && a.index == annotation && a.subtype == "FreeText" && !a.locked)
+                                                })
+                                            {
+                                                app.apply_edit(Edit::FontAnnotation { page, index: annotation, font: fam_name.to_string() });
+                                            }
+                                        }
+                                        ui.ctx().request_repaint();
+                                        ui.close();
+                                    }
+                                }
+                            });
                     }
                     if let QuickTool::Comment(tool) = app.quick_tool {
                         let (r, _) = ui.allocate_exact_size(vec2(32.0, 9.0), Sense::hover());
@@ -7266,5 +7648,66 @@ trailer << /Root 1 0 R >>
         assert_eq!(scroll_direction(-1, 0.2, false), -1, "a still view keeps its direction");
         assert_eq!(scroll_direction(1, -300.0, true), 0, "a zoom out moves the offset up without a scroll");
         assert_eq!(scroll_direction(-1, 300.0, true), 0);
+    }
+
+    #[test]
+    fn drags_keep_page_rasters_and_cross_page_batch_preserves_other_pages() {
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(900.0, 900.0)).build_eframe(|_cc| {
+            let mut app = PdfCraftApp::new();
+            let bytes = app.session.create_blank(200.0, 300.0, 3).unwrap();
+            app.open_bytes("three.pdf", None, bytes.as_ref().clone()).unwrap();
+            let id = app.views[0].id;
+            app.session
+                .apply(
+                    id,
+                    pdfcraft_engine::Edit::AddText {
+                        page: 0,
+                        text: pdfcraft_engine::AddedText { text: "Drag me".into(), rect: [40.0, 180.0, 140.0, 210.0], ..Default::default() },
+                    },
+                )
+                .unwrap();
+            app.set_option("zoom", "60").unwrap();
+            app.set_option("continuous", "on").unwrap();
+            assert!(app.execute("edit.edit_text"));
+            app
+        });
+        for _ in 0..80 {
+            h.run_steps(2);
+            if !h.state().render_pending() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(h.state().views[0].pages.contains_key(&2), "page 2 should be rasterized at 60% zoom");
+        let p2_tag_before = h.state().views[0].pages.get(&2).unwrap().tag;
+        assert_ne!(p2_tag_before, STALE_TAG);
+
+        // Moving added text re-renders its page once, without the item, so the text can follow the
+        // pointer; the page rasters themselves stay untouched while dragging.
+        let p0_tag_before = h.state().views[0].pages.get(&0).unwrap().tag;
+        let p0 = h.state().views[0].page_screen_rect(0).unwrap();
+        let start = pos2(p0.left() + 90.0 / 200.0 * p0.width(), p0.top() + (300.0 - 195.0) / 300.0 * p0.height());
+        h.hover_at(start);
+        h.run_steps(2);
+        h.drag_at(start);
+        h.run_steps(2);
+        h.hover_at(start + vec2(15.0, 15.0));
+        h.run_steps(2);
+        assert!(!h.state().views[0].text_background.pending(), "moving must not spawn text_background");
+        assert_eq!(h.state().views[0].pages.get(&0).unwrap().tag, p0_tag_before, "moving must not re-render the page raster");
+        assert!(
+            h.state().views[0].move_background.ready() || h.state().views[0].move_background.pending(),
+            "the page without the moving item renders in the background"
+        );
+
+        // Drop onto page 1: Batch changes pages 0 and 1, leaving page 2's raster fresh.
+        let p1 = h.state().views[0].page_screen_rect(1).unwrap();
+        let dst = p1.center();
+        h.hover_at(dst);
+        h.run_steps(2);
+        h.drop_at(dst);
+        h.run_steps(2);
+        let p2_tag_after = h.state().views[0].pages.get(&2).map(|p| p.tag);
+        assert_eq!(p2_tag_after, Some(p2_tag_before), "cross-page batch must not invalidate unaffected page 2");
     }
 }

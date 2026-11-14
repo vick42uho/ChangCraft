@@ -590,6 +590,20 @@ fn parse_cmap(data: &[u8]) -> (Vec<(usize, Vec<u8>, Vec<u8>)>, Vec<(u32, u32, u3
     (spaces, cids)
 }
 
+/// The font's `/BaseFont` (a Type 3 font's descriptor `/FontName` when it has none), read without
+/// building its metrics, so it decodes no CMap.
+pub fn base_font_name(doc: &Document, font: &Dict) -> String {
+    font.name(b"BaseFont")
+        .map(|name| String::from_utf8_lossy(name).into_owned())
+        .or_else(|| {
+            (font.name(b"Subtype") == Some(b"Type3"))
+                .then(|| dict(doc, font.get(b"FontDescriptor")))
+                .flatten()
+                .and_then(|d| d.name(b"FontName").map(|name| String::from_utf8_lossy(name).into_owned()))
+        })
+        .unwrap_or_default()
+}
+
 impl Metrics {
     /// Metrics for text without a usable font (Helvetica-like).
     pub fn fallback() -> Self {
@@ -621,16 +635,7 @@ impl Metrics {
 
     pub fn from_dict(doc: &Document, font: &Dict) -> Self {
         let mut m = Self::read_metrics(doc, font);
-        let base = font
-            .name(b"BaseFont")
-            .map(|name| String::from_utf8_lossy(name).into_owned())
-            .or_else(|| {
-                (font.name(b"Subtype") == Some(b"Type3"))
-                    .then(|| dict(doc, font.get(b"FontDescriptor")))
-                    .flatten()
-                    .and_then(|d| d.name(b"FontName").map(|name| String::from_utf8_lossy(name).into_owned()))
-            })
-            .unwrap_or_default();
+        let base = base_font_name(doc, font);
         m.subset = base.len() > 7 && base.as_bytes()[6] == b'+' && base[..6].bytes().all(|b| b.is_ascii_uppercase());
         let (bold, italic) = style_from_name(&base);
         m.bold |= bold;
@@ -2130,5 +2135,18 @@ mod encoding_tests {
         let m = Metrics::from_dict(&doc, &d);
         assert_eq!(m.text_of(0x61).as_deref(), Some("a"));
         assert_eq!(m.decode(b"abc"), "abc");
+    }
+
+    #[test]
+    fn base_font_name_reads_base_font_and_type3_descriptor_without_metrics() {
+        let (doc, d) = simple("ABCDEF+Sarabun-Bold", None, None);
+        assert_eq!(base_font_name(&doc, &d), "ABCDEF+Sarabun-Bold");
+
+        let mut desc = Dict::new();
+        desc.set(b"FontName".to_vec(), Object::name("PCCustomType3"));
+        let mut type3 = Dict::new();
+        type3.set(b"Subtype".to_vec(), Object::name("Type3"));
+        type3.set(b"FontDescriptor".to_vec(), Object::Dict(desc));
+        assert_eq!(base_font_name(&doc, &type3), "PCCustomType3");
     }
 }

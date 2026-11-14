@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use pdfcraft_content::{Matrix, Op, Pieces, parse, serialize_ops};
-use pdfcraft_cos::{Dict, Document, Object, PdfString, Stream};
+use pdfcraft_cos::{Dict, Document, ObjRef, Object, PdfString, Stream};
 use pdfcraft_fonts::pdf::Metrics;
 use pdfcraft_fonts::{CraftFont, GlyphError, japanese_glyph_from};
 
@@ -111,6 +111,11 @@ pub struct TextEditorFont {
 }
 
 pub fn text_editor_fonts(doc: &Document, page: usize) -> Result<Vec<TextEditorFont>, EditError> {
+    text_editor_fonts_with_lines(doc, page, None)
+}
+
+/// Like [`text_editor_fonts`], reusing already-extracted `lines` for `page` when provided.
+pub fn text_editor_fonts_with_lines(doc: &Document, page: usize, lines: Option<&[TextLine]>) -> Result<Vec<TextEditorFont>, EditError> {
     let p = page_dict(doc, page)?;
     let resources = p.dict.get(b"Resources").and_then(|o| doc.dict(o)).unwrap_or_default();
     let fonts = resources.get(b"Font").and_then(|o| doc.dict(o)).unwrap_or_default();
@@ -125,7 +130,7 @@ pub fn text_editor_fonts(doc: &Document, page: usize) -> Result<Vec<TextEditorFo
         budget -= bytes.len();
         result.push(TextEditorFont {
             resource: String::from_utf8_lossy(name).into_owned(),
-            face: Metrics::from_dict(doc, &font).base_font.rsplit('+').next().unwrap_or_default().to_owned(),
+            face: pdfcraft_fonts::pdf::base_font_name(doc, &font).rsplit('+').next().unwrap_or_default().to_owned(),
             bytes,
         });
     }
@@ -134,13 +139,21 @@ pub fn text_editor_fonts(doc: &Document, page: usize) -> Result<Vec<TextEditorFo
     // installed on this computer. A look-alike family is never added (#THSarabunPSK vs Sarabun).
     // Installed faces are read only for families the page shows Thai with, which is the case an
     // edit needs them for; every other script keeps the preview it had.
-    let thai_faces: Vec<String> = text_lines(doc, page)
-        .unwrap_or_default()
-        .into_iter()
+    let owned_lines;
+    let lines_ref = match lines {
+        Some(lines) => lines,
+        None => {
+            owned_lines = text_lines(doc, page).unwrap_or_default();
+            &owned_lines
+        }
+    };
+    let thai_faces: Vec<String> = lines_ref
+        .iter()
         .filter(|line| line.text.chars().any(|c| matches!(u32::from(c), 0x0E00..=0x0E7F)))
         .map(|line| line.base_font.rsplit('+').next().unwrap_or_default().to_owned())
         .collect();
     let source_faces: Vec<_> = result.iter().map(|p| p.face.clone()).collect();
+    let mut tried_installed = std::collections::HashSet::new();
     for face in source_faces {
         let fulls = pdfcraft_fonts::embedding::matching_faces_exact(&face);
         if !fulls.is_empty() {
@@ -158,6 +171,9 @@ pub fn text_editor_fonts(doc: &Document, page: usize) -> Result<Vec<TextEditorFo
             continue;
         }
         let (bold, italic) = pdfcraft_fonts::embedding::name_style(&face);
+        if !tried_installed.insert((face.clone(), bold, italic)) {
+            continue;
+        }
         let Some(program) = pdfcraft_fonts::embedding::installed_face(&face, bold, italic) else { continue };
         if program.0.len() > budget {
             continue;
@@ -204,6 +220,22 @@ pub struct TextEditLayout {
 
 pub fn text_edit_layout(doc: &Document, page: usize, block: usize, text: &str, style: &BlockStyle) -> Result<TextEditLayout, EditError> {
     TextSession::open(doc, page, block)?.layout(text, style)
+}
+
+/// Like [`text_edit_layout`], reusing already-extracted `lines` for `page`.
+pub fn text_edit_layout_with_lines(
+    doc: &Document,
+    page: usize,
+    block: usize,
+    text: &str,
+    style: &BlockStyle,
+    lines: &[TextLine],
+) -> Result<TextEditLayout, EditError> {
+    let source = group_page_blocks(doc, page, lines)
+        .get(block)
+        .cloned()
+        .ok_or_else(|| EditError::Invalid(format!("page {} has no paragraph {}", page + 1, block + 1)))?;
+    layout_draft(doc, page, lines, &source, block, text, style)
 }
 
 /// A draft of paragraph `source` (number `block` among the page's `lines`) laid out by the rewrite
@@ -956,6 +988,18 @@ type CachedFont = (Rc<Metrics>, Option<String>, Result<Option<f64>, String>);
 /// A `Do` met while interpreting: its operator index, XObject name and the state there.
 type Invocation = (usize, Vec<u8>, Ts);
 
+/// Follow an indirect object reference chain (at most 8 hops) to its target `ObjRef`.
+fn font_ref(doc: &Document, obj: &Object) -> Option<ObjRef> {
+    let mut cur = obj.as_ref()?;
+    for _ in 0..8 {
+        match doc.get(cur).as_ref() {
+            Object::Ref(next) => cur = *next,
+            _ => return Some(cur),
+        }
+    }
+    None
+}
+
 fn interpret(
     doc: &Document,
     ops: &[Op],
@@ -968,6 +1012,7 @@ fn interpret(
 ) -> Result<Vec<Shown>, EditError> {
     let fonts_res = resources.get(b"Font").map(|f| doc.resolve(f)).and_then(|f| f.as_dict().cloned()).unwrap_or_default();
     let states = resources.get(b"ExtGState").map(|g| doc.resolve(g)).and_then(|g| g.as_dict().cloned()).unwrap_or_default();
+    let mut by_font: HashMap<ObjRef, CachedFont> = HashMap::new();
     let mut out: Vec<Shown> = Vec::new();
     let mut ts = carry.ts.clone();
     let mut at_bt = (0usize, ts.clone());
@@ -1061,11 +1106,22 @@ fn interpret(
                 ts.size = op.num(1).unwrap_or(ts.size);
                 if let Some(name) = op.name(0) {
                     let (m, face, vertical) = cache.entry(name.to_vec()).or_insert_with(|| {
-                        let dict = fonts_res.get(name).and_then(|f| doc.resolve(f).as_dict().cloned());
+                        let entry = fonts_res.get(name);
+                        let ref_id = entry.and_then(|f| font_ref(doc, f));
+                        if let Some(id) = ref_id
+                            && let Some(shared) = by_font.get(&id)
+                        {
+                            return shared.clone();
+                        }
+                        let dict = entry.and_then(|f| doc.resolve(f).as_dict().cloned());
                         let metrics = dict.as_ref().map_or_else(Metrics::fallback, |d| Metrics::from_dict(doc, d));
                         let vertical = dict.as_ref().map_or(Ok(None), |d| vertical_advance(doc, d).map_err(|e| e.to_string()));
                         let face = dict.filter(is_type3_fallback).map(|_| metrics.base_font.clone());
-                        (Rc::new(metrics), face, vertical)
+                        let loaded = (Rc::new(metrics), face, vertical);
+                        if let Some(id) = ref_id {
+                            by_font.insert(id, loaded.clone());
+                        }
+                        loaded
                     });
                     ts.font = Some((name.to_vec(), m.clone()));
                     ts.face = face.clone();
@@ -1335,6 +1391,19 @@ pub fn text_lines(doc: &Document, page: usize) -> Result<Vec<TextLine>, EditErro
         if s.logical_order && s.glyph_count == 1 && s.text.chars().all(crate::bidi::is_rtl) {
             s.text = crate::bidi::to_visual(&s.text);
             s.logical_order = false;
+        }
+        let is_thai_font = {
+            let lower = s.base_font.to_ascii_lowercase();
+            lower.contains("upc")
+                || lower.contains("thai")
+                || lower.contains("dillenia")
+                || lower.contains("cordia")
+                || lower.contains("angsana")
+                || lower.contains("sarabun")
+                || lower.contains("browallia")
+        };
+        if is_thai_font {
+            s.text = pdfcraft_fonts::tis620_to_thai(&s.text).into_owned();
         }
         s.text = pdfcraft_fonts::normalize_thai_pua(&s.text).into_owned();
         // A line belongs to one stream piece. Within it, PDF producers often put every word
@@ -2244,9 +2313,20 @@ fn family_program(family: &str, bold: bool, italic: bool, text: &str) -> Option<
         return Some((face.bytes.to_vec(), name));
     }
     // The same family installed on this computer, which is where a Thai document's own face
-    // usually lives (TH SarabunPSK, Angsana New, Tahoma). Never bundled, never committed.
-    let program = pdfcraft_fonts::embedding::installed_face(name, bold, italic)?;
-    pdfcraft_fonts::embedding::covers(&program.0, text).then(|| (program.0.clone(), name.to_string()))
+    // usually lives (TH SarabunPSK, Angsana New, Tahoma, DilleniaUPC). Never bundled, never committed.
+    if let Some(program) = pdfcraft_fonts::embedding::installed_face(name, bold, italic)
+        && pdfcraft_fonts::embedding::covers(&program.0, text)
+    {
+        return Some((program.0.clone(), name.to_string()));
+    }
+    // Fallback for proprietary vendor/bank prefixes (e.g. P5DilleniaUPC): use approved matching face (Sarabun).
+    if let Some(face) =
+        pdfcraft_fonts::embedding::matching_faces(name).into_iter().find(|f| f.covers("Thai") && pdfcraft_fonts::embedding::covers(f.bytes, text))
+    {
+        let face_name = pdfcraft_fonts::embedding::names(face.bytes).map_or_else(|_| face.name(), |(_, n)| n);
+        return Some((face.bytes.to_vec(), face_name));
+    }
+    None
 }
 
 /// Embed a complete face of exactly `family` as a page font, once per `key`, and return its
@@ -2288,10 +2368,8 @@ fn embed_family_face(
     }
     let Some((bytes, full)) = family_program(family, bold, italic, text) else { return Ok(None) };
     let name = pdfcraft_fonts::embedding::embed(doc, fonts, &bytes, &full).map_err(EditError::Invalid)?;
-    let dict = fonts
-        .get(name.as_bytes())
-        .and_then(|f| doc.dict(f))
-        .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+    let dict =
+        fonts.get(name.as_bytes()).and_then(|f| doc.dict(f)).ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
     metrics.insert(name.clone(), Metrics::from_dict(doc, &dict));
     embedded.insert(key, name.clone());
     Ok(Some(name))
@@ -2457,12 +2535,10 @@ pub(crate) fn replace_line_with_limit(doc: &mut Document, page: usize, line: usi
                 &text,
             )?;
             if let Some(name) = full {
-                let metrics = full_metrics
-                    .get(&name)
-                    .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
-                let bytes = metrics.encode(&shown).ok_or_else(|| {
-                    EditError::Invalid(format!("\"{text}\" can't be shown by the {} font", target.base_font))
-                })?;
+                let metrics = full_metrics.get(&name).ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+                let bytes = metrics
+                    .encode(&shown)
+                    .ok_or_else(|| EditError::Invalid(format!("\"{text}\" can't be shown by the {} font", target.base_font)))?;
                 let size = font_size_before(&ops, first).unwrap_or(target.size);
                 replacement.push(Op::new("Tf", vec![Object::name(&name), pdfcraft_content::num(size)]));
                 replacement.push(Op::new("Tj", vec![Object::String(PdfString::literal(bytes))]));
@@ -2630,10 +2706,33 @@ pub fn block_overlapping(blocks: &[TextBlock], rect: [f64; 4]) -> Option<usize> 
     blocks.iter().enumerate().map(|(i, b)| (i, area(b))).filter(|(_, a)| *a > 0.0).max_by(|(_, a), (_, b)| a.total_cmp(b)).map(|(i, _)| i)
 }
 
-/// The paragraphs on a page (0-based).
+/// Group already-extracted text lines into editable paragraphs, without a page's table rules.
+/// Callers that have the document should prefer [`text_blocks_from_doc_with_lines`], which also
+/// splits cells at the rules drawn between them.
+pub fn text_blocks_from_lines(lines: &[TextLine]) -> Vec<TextBlock> {
+    group_blocks(lines)
+}
+
+/// The vector table rules drawn on `page`. Grouping is a reading aid, so a page whose content
+/// cannot be scanned still yields its paragraphs, just without the rule splits.
+fn page_rules(doc: &Document, page: usize) -> Vec<[f64; 4]> {
+    crate::background::page_divider_lines(doc, page).unwrap_or_default()
+}
+
+/// Group `lines` of `page` into paragraphs, splitting cells at the table rules drawn between them.
+fn group_page_blocks(doc: &Document, page: usize, lines: &[TextLine]) -> Vec<TextBlock> {
+    regions::group_blocks_with_rules(lines, &page_rules(doc, page))
+}
+
+/// The paragraphs on `page`, reusing its already-extracted `lines`.
+pub fn text_blocks_from_doc_with_lines(doc: &Document, page: usize, lines: &[TextLine]) -> Vec<TextBlock> {
+    group_page_blocks(doc, page, lines)
+}
+
+/// All paragraphs (`text_blocks`) on a page, in reading order.
 pub fn text_blocks(doc: &Document, page: usize) -> Result<Vec<TextBlock>, EditError> {
     let lines = text_lines(doc, page)?;
-    Ok(group_blocks(&lines))
+    Ok(group_page_blocks(doc, page, &lines))
 }
 
 /// Remove a paragraph's glyphs for a temporary editor background. Numeric TJ adjustments
@@ -2641,11 +2740,16 @@ pub fn text_blocks(doc: &Document, page: usize) -> Result<Vec<TextBlock>, EditEr
 /// Call this on a clone: it is a preview operation, not a document edit.
 pub fn clear_block(doc: &mut Document, page: usize, block: usize) -> Result<(), EditError> {
     let lines = text_lines(doc, page)?;
-    let blocks = group_blocks(&lines);
+    clear_block_with_lines(doc, page, block, &lines)
+}
+
+/// Like [`clear_block`], reusing already-extracted `lines` for `page`.
+pub fn clear_block_with_lines(doc: &mut Document, page: usize, block: usize, lines: &[TextLine]) -> Result<(), EditError> {
+    let blocks = group_page_blocks(doc, page, lines);
     let target = blocks.get(block).ok_or_else(|| EditError::Invalid("the paragraph no longer exists".into()))?;
     let targets: Vec<&TextLine> = target.lines.iter().filter_map(|i| lines.get(*i)).collect();
     targets.iter().try_for_each(|line| line.ensure_editable())?;
-    let mut drops = coincident_ops(&lines, &targets);
+    let mut drops = coincident_ops(lines, &targets);
     drops.extend(target.lines.iter().filter_map(|i| lines.get(*i)).flat_map(|l| l.ops.iter().copied()));
     let p = page_dict(doc, page)?;
     let res = p.dict.get(b"Resources").and_then(|r| doc.resolve(r).as_dict().cloned()).unwrap_or_default();
@@ -2824,7 +2928,7 @@ fn rewrite_block_from(
     style: &BlockStyle,
     max_glyphs: usize,
 ) -> Result<LineEdit, EditError> {
-    let blocks = group_blocks(&lines);
+    let blocks = group_page_blocks(doc, page, &lines);
     let b = blocks.get(block).cloned().ok_or_else(|| EditError::Invalid(format!("page {} has no paragraph {}", page + 1, block + 1)))?;
     let members: Vec<&TextLine> = b.lines.iter().map(|i| &lines[*i]).collect();
     // One clipping run is enough: rewriting the paragraph would drop its mask with the rest.
@@ -2988,11 +3092,8 @@ fn rewrite_block_from(
             u32::from(ch)
         )));
     }
-    let type3 = if !reuse && full.is_none() && needs_type3(&flat) {
-        Some(type3_font(doc, &mut fonts_res, &flat, family, bold, max_glyphs)?)
-    } else {
-        None
-    };
+    let type3 =
+        if !reuse && full.is_none() && needs_type3(&flat) { Some(type3_font(doc, &mut fonts_res, &flat, family, bold, max_glyphs)?) } else { None };
     let advance = |s: &str| -> f64 {
         let t = match (&metrics, reuse) {
             (Some(m), true) => {
@@ -3050,10 +3151,7 @@ fn rewrite_block_from(
         (font_name.clone(), Box::new(move |s: &str| m.encode(s).map(|bytes| vec![(name.clone(), bytes)])))
     } else if let Some(name) = full.clone() {
         // The same family, complete: no substitution is reported, and the encoding is Unicode.
-        let m = full_metrics
-            .get(&name)
-            .cloned()
-            .ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
+        let m = full_metrics.get(&name).cloned().ok_or_else(|| EditError::Invalid("the full source font could not be loaded".into()))?;
         let shown = name.clone();
         (name, Box::new(move |s: &str| m.encode(s).map(|bytes| vec![(shown.clone(), bytes)])))
     } else if let Some(fallback) = type3.clone() {
@@ -3289,15 +3387,23 @@ pub(crate) fn reveal_ops(block: &TextBlock, lines: &[TextLine], style: &BlockSty
 }
 
 /// Existing paragraph indexes, excluding streams owned by an added-content item.
-pub(crate) fn selectable_blocks(
+pub(crate) fn selectable_blocks_with_lines(
     doc: &Document,
     page: usize,
     excluded: &std::collections::BTreeSet<pdfcraft_cos::ObjRef>,
+    lines: Option<&[TextLine]>,
 ) -> Result<Vec<(usize, TextBlock)>, EditError> {
     let p = page_dict(doc, page)?;
     let streams = content_streams(doc, &p.dict);
-    let lines = text_lines(doc, page)?;
-    Ok(group_blocks(&lines)
+    let owned_lines;
+    let lines = match lines {
+        Some(lines) => lines,
+        None => {
+            owned_lines = text_lines(doc, page)?;
+            &owned_lines
+        }
+    };
+    Ok(group_page_blocks(doc, page, lines)
         .into_iter()
         .enumerate()
         .filter(|(_, b)| {
@@ -3375,37 +3481,372 @@ fn vertical_encoding(doc: &Document, font: &Dict) -> Result<bool, EditError> {
     Err(EditError::Invalid("the text encoding is nested too deeply".into()))
 }
 
+/// The text-showing operators of paragraphs `indexes` (from [`group_blocks`] of the page's
+/// lines), as indexes among the page's joined operators. `editable`: refuse a line that can't be
+/// edited (moving rewrites its operators; copying takes them as they are).
+pub(crate) fn paragraph_ops(doc: &Document, page: usize, indexes: &[usize], editable: bool) -> Result<std::collections::BTreeSet<usize>, EditError> {
+    if indexes.is_empty() {
+        return Ok(std::collections::BTreeSet::new());
+    }
+    let lines = text_lines(doc, page)?;
+    let rules = page_rules(doc, page);
+    paragraph_ops_from(&lines, &rules, indexes, editable)
+}
+
+pub(crate) fn paragraph_ops_from(
+    lines: &[TextLine],
+    rules: &[[f64; 4]],
+    indexes: &[usize],
+    editable: bool,
+) -> Result<std::collections::BTreeSet<usize>, EditError> {
+    let mut selected = std::collections::BTreeSet::new();
+    if indexes.is_empty() {
+        return Ok(selected);
+    }
+    let blocks = regions::group_blocks_with_rules(lines, rules);
+    for index in indexes {
+        let b = blocks.get(*index).ok_or_else(|| EditError::Invalid("a selected paragraph no longer exists".into()))?;
+        for line in &b.lines {
+            let l = lines.get(*line).ok_or_else(|| EditError::Invalid("a selected text line no longer exists".into()))?;
+            if editable {
+                l.ensure_editable()?;
+            }
+            selected.extend(l.ops.iter().copied());
+        }
+    }
+    Ok(selected)
+}
+
+/// Where each text-showing operator of `ops` (a page's joined operators, drawn with `resources`)
+/// starts its glyphs: the text matrix there, and its rendering mode (`Tr`).
+pub(crate) fn show_starts(doc: &Document, ops: &[Op], resources: &Dict) -> Result<HashMap<usize, (Matrix, i64)>, EditError> {
+    let shown = interpret(doc, ops, resources, &mut HashMap::new(), &mut Carry::new(), None, None)?;
+    Ok(shown.into_iter().map(|s| (s.op, (s.tm, s.state.render_mode))).collect())
+}
+
 /// Translate paragraphs together without re-encoding glyphs, changing fonts or reflowing.
 /// Numeric TJ offsets and text rise temporarily move each selected show operation, then
 /// restore both advances and rise. The PDF reader advances the original glyph bytes itself:
 /// no approximate font metrics are used to position following, unselected text (§9.4.4).
-pub(crate) fn translate_blocks(doc: &mut Document, page: usize, indexes: &[usize], offset: [f64; 2]) -> Result<(), EditError> {
+struct ClipScope {
+    depth: usize,
+    start: usize,
+    w_op: usize,
+    end: usize,
+    is_no_paint: bool,
+    bbox: [f64; 4],
+    has_other_paint: bool,
+    blocked_selected: Vec<usize>,
+}
+
+fn expand_bbox(bbox: &mut Option<[f64; 4]>, pt: (f64, f64)) {
+    *bbox = Some(match *bbox {
+        Some(r) => [r[0].min(pt.0), r[1].min(pt.1), r[2].max(pt.0), r[3].max(pt.1)],
+        None => [pt.0, pt.1, pt.0, pt.1],
+    });
+}
+
+fn analyze_clips(
+    ops: &[Op],
+    selected: &std::collections::BTreeSet<usize>,
+    shown: &[Shown],
+    offset: [f64; 2],
+) -> (std::collections::BTreeSet<usize>, std::collections::BTreeSet<usize>) {
+    let shown_rect: HashMap<usize, [f64; 4]> = shown.iter().map(|s| (s.op, s.rect)).collect();
+    let mut ctm = Matrix([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+    let mut ctm_stack: Vec<Matrix> = Vec::new();
+    let mut path_start: Option<usize> = None;
+    let mut path_bbox: Option<[f64; 4]> = None;
+    let mut pending_clip: Option<usize> = None;
+    let mut active: Vec<ClipScope> = Vec::new();
+    let mut finished: Vec<(ClipScope, bool)> = Vec::new();
+
+    for (i, op) in ops.iter().enumerate() {
+        match op.op.as_slice() {
+            b"q" => ctm_stack.push(ctm),
+            b"Q" => {
+                if let Some(prev) = ctm_stack.pop() {
+                    ctm = prev;
+                }
+                let depth = ctm_stack.len();
+                let mut i = active.len();
+                while i > 0 {
+                    i -= 1;
+                    if active.get(i).is_some_and(|c| c.depth > depth) {
+                        finished.push((active.remove(i), true));
+                    }
+                }
+            }
+            b"cm" => {
+                if let Some(m) = Matrix::from_operands(&op.operands) {
+                    ctm = m.then(&ctm);
+                }
+            }
+            b"m" | b"l" => {
+                if path_start.is_none() {
+                    path_start = Some(i);
+                }
+                if let Some([x, y]) = op.nums::<2>() {
+                    expand_bbox(&mut path_bbox, ctm.apply(x, y));
+                }
+            }
+            b"c" => {
+                if path_start.is_none() {
+                    path_start = Some(i);
+                }
+                if let Some([x1, y1, x2, y2, x3, y3]) = op.nums::<6>() {
+                    for (x, y) in [(x1, y1), (x2, y2), (x3, y3)] {
+                        expand_bbox(&mut path_bbox, ctm.apply(x, y));
+                    }
+                }
+            }
+            b"v" | b"y" => {
+                if path_start.is_none() {
+                    path_start = Some(i);
+                }
+                if let Some([x1, y1, x2, y2]) = op.nums::<4>() {
+                    for (x, y) in [(x1, y1), (x2, y2)] {
+                        expand_bbox(&mut path_bbox, ctm.apply(x, y));
+                    }
+                }
+            }
+            b"re" => {
+                if path_start.is_none() {
+                    path_start = Some(i);
+                }
+                if let Some([x, y, w, h]) = op.nums::<4>() {
+                    for (px, py) in [(x, y), (x + w, y), (x, y + h), (x + w, y + h)] {
+                        expand_bbox(&mut path_bbox, ctm.apply(px, py));
+                    }
+                }
+            }
+            b"h" => {}
+            b"W" | b"W*" => {
+                if pending_clip.is_none() {
+                    pending_clip = Some(i);
+                }
+            }
+            b"n" | b"S" | b"s" | b"f" | b"F" | b"f*" | b"B" | b"B*" | b"b" | b"b*" => {
+                let is_no_paint = op.is("n");
+                if !is_no_paint {
+                    for clip in &mut active {
+                        clip.has_other_paint = true;
+                    }
+                }
+                if let (Some(start), Some(w_op), Some(bbox)) = (path_start, pending_clip, path_bbox) {
+                    active.push(ClipScope {
+                        depth: ctm_stack.len(),
+                        start,
+                        w_op,
+                        end: i,
+                        is_no_paint,
+                        bbox,
+                        has_other_paint: false,
+                        blocked_selected: Vec::new(),
+                    });
+                }
+                path_start = None;
+                path_bbox = None;
+                pending_clip = None;
+            }
+            b"sh" | b"Do" | b"BI" => {
+                for clip in &mut active {
+                    clip.has_other_paint = true;
+                }
+            }
+            b"Tj" | b"TJ" | b"'" | b"\"" => {
+                if !selected.contains(&i) {
+                    for clip in &mut active {
+                        clip.has_other_paint = true;
+                    }
+                } else if let Some(&rect) = shown_rect.get(&i) {
+                    let moved = [rect[0] + offset[0], rect[1] + offset[1], rect[2] + offset[0], rect[3] + offset[1]];
+                    for clip in &mut active {
+                        if !pdfcraft_content::contains(clip.bbox, moved, 0.5) {
+                            clip.blocked_selected.push(i);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    for clip in active {
+        finished.push((clip, false));
+    }
+
+    let mut relocate = std::collections::BTreeSet::new();
+    for (clip, closed_by_q) in &finished {
+        if !closed_by_q || clip.has_other_paint {
+            for &op_idx in &clip.blocked_selected {
+                relocate.insert(op_idx);
+            }
+        }
+    }
+
+    let mut drop_ops = std::collections::BTreeSet::new();
+    for (clip, closed_by_q) in &finished {
+        if *closed_by_q && !clip.has_other_paint && clip.blocked_selected.iter().any(|op_idx| !relocate.contains(op_idx)) {
+            let path_only = ops.get(clip.start..=clip.end).is_some_and(|slice| {
+                slice.iter().all(|o| matches!(o.op.as_slice(), b"m" | b"l" | b"c" | b"v" | b"y" | b"re" | b"h" | b"W" | b"W*" | b"n"))
+            });
+            if clip.is_no_paint && path_only {
+                for idx in clip.start..=clip.end {
+                    drop_ops.insert(idx);
+                }
+            } else {
+                drop_ops.insert(clip.w_op);
+            }
+        }
+    }
+    (drop_ops, relocate)
+}
+
+fn quote_spacing_ops(original: &Op) -> Result<Vec<Op>, EditError> {
+    if !original.is("\"") {
+        return Ok(Vec::new());
+    }
+    let spacing = original
+        .operands
+        .get(..2)
+        .filter(|a| a.iter().all(|o| o.as_f64().is_some()))
+        .ok_or_else(|| EditError::Invalid("a text operation has invalid spacing".into()))?;
+    Ok(["Tw", "Tc"].into_iter().zip(spacing).map(|(operator, operand)| Op::new(operator, vec![operand.clone()])).collect())
+}
+
+fn show_op_as_tj(original: &Op, include_t_star: bool) -> Result<(Vec<Op>, Op), EditError> {
+    let mut prefix = quote_spacing_ops(original)?;
+    if original.is("'") || original.is("\"") {
+        if include_t_star {
+            prefix.push(Op::new("T*", vec![]));
+        }
+        let str_op = original.operands.last().cloned().ok_or_else(|| EditError::Invalid("a text operation has no string".into()))?;
+        return Ok((prefix, Op::new("Tj", vec![str_op])));
+    }
+    Ok((prefix, original.clone()))
+}
+
+/// `BDC`/`BMC` … `EMC` spans in `mc_ops` whose painted contents are completely relocated or dropped,
+/// so relocating moved text takes its `/ActualText` metadata without leaving empty wrappers behind.
+fn relocated_actual_text_spans(
+    ops: &[Op],
+    mc_ops: &std::collections::BTreeSet<usize>,
+    relocate: &std::collections::BTreeSet<usize>,
+    drop_ops: &std::collections::BTreeSet<usize>,
+) -> Vec<(usize, usize)> {
+    struct Span {
+        open: usize,
+        depth: usize,
+        in_text: bool,
+        has_kept_paint: bool,
+        has_relocated: bool,
+    }
+    let mut out = Vec::new();
+    let (mut depth, mut in_text) = (0usize, false);
+    let mut stack: Vec<Span> = Vec::new();
+    for (i, op) in ops.iter().enumerate() {
+        match op.op.as_slice() {
+            b"q" => depth = depth.saturating_add(1),
+            b"Q" if depth > 0 => depth -= 1,
+            b"BT" if !in_text => in_text = true,
+            b"ET" if in_text => in_text = false,
+            b"BDC" | b"BMC" => stack.push(Span { open: i, depth, in_text, has_kept_paint: false, has_relocated: false }),
+            b"EMC" => {
+                if let Some(span) = stack.pop() {
+                    let drop_span = span.depth == depth
+                        && span.in_text == in_text
+                        && !span.has_kept_paint
+                        && span.has_relocated
+                        && mc_ops.contains(&span.open)
+                        && mc_ops.contains(&i);
+                    if drop_span {
+                        out.push((span.open, i));
+                    }
+                    if let Some(parent) = stack.last_mut() {
+                        parent.has_kept_paint |= span.has_kept_paint;
+                        parent.has_relocated |= span.has_relocated;
+                    }
+                }
+            }
+            b"Tj" | b"TJ" | b"'" | b"\"" | b"Do" | b"sh" | b"BI" | b"S" | b"s" | b"f" | b"F" | b"f*" | b"B" | b"B*" | b"b" | b"b*" => {
+                if let Some(top) = stack.last_mut() {
+                    if relocate.contains(&i) {
+                        top.has_relocated = true;
+                    } else if !drop_ops.contains(&i) {
+                        top.has_kept_paint = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+pub(crate) fn translate_blocks_with_lines(
+    doc: &mut Document,
+    page: usize,
+    indexes: &[usize],
+    offset: [f64; 2],
+    lines: Option<&[TextLine]>,
+) -> Result<(), EditError> {
     if indexes.is_empty() {
         return Ok(());
     }
     let p = page_dict(doc, page)?;
     let streams = content_streams(doc, &p.dict);
-    let lines = text_lines(doc, page)?;
-    let blocks = group_blocks(&lines);
-    let mut selected = std::collections::BTreeSet::new();
-    for index in indexes {
-        let b = blocks.get(*index).ok_or_else(|| EditError::Invalid("a selected paragraph no longer exists".into()))?;
-        for line in &b.lines {
-            let l = lines.get(*line).ok_or_else(|| EditError::Invalid("a selected text line no longer exists".into()))?;
-            l.ensure_editable()?;
-            selected.extend(l.ops.iter().copied());
-        }
-    }
+    let selected = match lines {
+        Some(lines) => paragraph_ops_from(lines, &page_rules(doc, page), indexes, true)?,
+        None => paragraph_ops(doc, page, indexes, true)?,
+    };
     let res = p.dict.get(b"Resources").map(|r| doc.resolve(r)).and_then(|r| r.as_dict().cloned()).unwrap_or_default();
     let fonts = res.get(b"Font").map(|r| doc.resolve(r)).and_then(|r| r.as_dict().cloned()).unwrap_or_default();
     let pieces = Pieces::join(&streams.iter().map(|(_, d)| d.as_slice()).collect::<Vec<_>>());
     let ops = pieces.parse().ops;
+    let mut move_ops = std::collections::BTreeSet::new();
+    let mut mc_ops = std::collections::BTreeSet::new();
+    for idx in selected {
+        match ops.get(idx).map(|op| op.op.as_slice()) {
+            Some(b"Tj" | b"TJ" | b"'" | b"\"") => {
+                move_ops.insert(idx);
+            }
+            Some(b"BDC" | b"BMC" | b"EMC") => {
+                mc_ops.insert(idx);
+            }
+            _ => return Err(EditError::Invalid("a selected text operation cannot be moved".into())),
+        }
+    }
     let shown = interpret(doc, &ops, &res, &mut HashMap::new(), &mut Carry::new(), None, None)?;
+    let (drop_ops, mut relocate) = analyze_clips(&ops, &move_ops, &shown, offset);
     let mut patches = HashMap::new();
+    for &idx in &drop_ops {
+        patches.insert(idx, Vec::new());
+    }
     // Keep full precision: a tiny rounded text-space change can be magnified by a CTM,
     // and restoring rise/spacing must not alter following unselected text.
     let n = Object::Real;
-    for s in shown.into_iter().filter(|s| selected.contains(&s.op)) {
+    let mut handled = 0usize;
+    let mut restore_tm: Option<(usize, usize)> = None;
+    for s in &shown {
+        if restore_tm.is_some_and(|(bt, _)| bt != s.bt) {
+            restore_tm = None;
+        }
+        let need_tm = restore_tm.is_some_and(|(_, prev)| !ops.get(prev + 1..s.op).is_some_and(|slice| slice.iter().any(|o| o.is("Tm"))));
+        let original = ops.get(s.op).ok_or_else(|| EditError::Invalid("a selected text operation is missing".into()))?;
+        if !move_ops.contains(&s.op) {
+            if restore_tm.is_some() {
+                if need_tm {
+                    let mut pre = vec![Op::new("Tm", s.tm.0.into_iter().map(n).collect())];
+                    let (mut prefix, show) = show_op_as_tj(original, false)?;
+                    pre.append(&mut prefix);
+                    pre.push(show);
+                    patches.insert(s.op, pre);
+                }
+                restore_tm = None;
+            }
+            continue;
+        }
+        handled += 1;
         if !(0..=3).contains(&s.state.render_mode) {
             return Err(EditError::Invalid("text used as a clipping path cannot be moved in a group".into()));
         }
@@ -3432,24 +3873,18 @@ pub(crate) fn translate_blocks(doc: &mut Document, page: usize, indexes: &[usize
         if ![shift, rise, dx, dy].iter().all(|v| v.is_finite() && v.abs() <= 1e12) {
             return Err(EditError::Invalid("the paragraph move is too large".into()));
         }
-        let original = ops.get(s.op).ok_or_else(|| EditError::Invalid("a selected text operation is missing".into()))?;
+        if relocate.contains(&s.op) {
+            patches.insert(s.op, quote_spacing_ops(original)?);
+            restore_tm = Some((s.bt, s.op));
+            continue;
+        }
         let mut replacement = Vec::new();
-        let show = if original.is("'") || original.is("\"") {
-            if original.is("\"") {
-                let spacing = original
-                    .operands
-                    .get(..2)
-                    .filter(|a| a.iter().all(|o| o.as_f64().is_some()))
-                    .ok_or_else(|| EditError::Invalid("a text operation has invalid spacing".into()))?;
-                for (operator, operand) in ["Tw", "Tc"].into_iter().zip(spacing) {
-                    replacement.push(Op::new(operator, vec![operand.clone()]));
-                }
-            }
-            replacement.push(Op::new("T*", vec![]));
-            Op::new("Tj", vec![original.operands.last().cloned().ok_or_else(|| EditError::Invalid("a text operation has no string".into()))?])
-        } else {
-            original.clone()
-        };
+        if need_tm {
+            replacement.push(Op::new("Tm", s.tm.0.into_iter().map(n).collect()));
+        }
+        restore_tm = None;
+        let (mut prefix, show) = show_op_as_tj(original, !need_tm)?;
+        replacement.append(&mut prefix);
         if dy != 0.0 {
             replacement.push(Op::new("Ts", vec![n(rise)]));
         }
@@ -3465,12 +3900,32 @@ pub(crate) fn translate_blocks(doc: &mut Document, page: usize, indexes: &[usize
         }
         patches.insert(s.op, replacement);
     }
-    if patches.len() != selected.len() {
+    if handled != move_ops.len() {
         return Err(EditError::Invalid("a selected text operation cannot be moved".into()));
     }
+    let moved_bytes = if relocate.is_empty() {
+        None
+    } else {
+        for (open, close) in relocated_actual_text_spans(&ops, &mc_ops, &relocate, &drop_ops) {
+            patches.insert(open, Vec::new());
+            patches.insert(close, Vec::new());
+            relocate.insert(open);
+            relocate.insert(close);
+        }
+        let shows: HashMap<usize, (Matrix, i64)> = shown.iter().map(|s| (s.op, (s.tm, s.state.render_mode))).collect();
+        let drawn = crate::objects::clip::replay_unclipped(&ops, &relocate, &shows)?;
+        let mut wrapped = vec![Op::new("q", vec![]), Op::new("cm", vec![n(1.0), n(0.0), n(0.0), n(1.0), n(offset[0]), n(offset[1])])];
+        wrapped.extend(drawn);
+        wrapped.push(Op::new("Q", vec![]));
+        Some(pdfcraft_content::serialize_ops(&wrapped))
+    };
     let data = splice(&pieces, &ops, |i| patches.remove(&i).map_or((Vec::new(), true), |v| (v, false)));
     let contents = rewritten_contents(doc, &streams, data);
     doc.update_dict(p.obj, |d| d.set(b"Contents".to_vec(), contents))?;
+    if let Some(bytes) = moved_bytes {
+        let updated = page_dict(doc, page)?;
+        crate::place_tagged(doc, &updated, "Moved", bytes, false)?;
+    }
     Ok(())
 }
 
@@ -3610,5 +4065,34 @@ mod tests {
         assert!(fallback.codes.contains_key(&'\u{200B}'));
         let zw_width = fallback.widths.iter().find(|(c, _)| *c == '\u{200B}').map(|(_, w)| *w);
         assert_eq!(zw_width, Some(0.0));
+    }
+
+    #[test]
+    fn objref_font_alias_sharing() {
+        let content = "BT /F1 12 Tf 40 200 Td (Alpha) Tj ET BT /F2 12 Tf 40 160 Td (Beta) Tj ET BT /F3 12 Tf 40 120 Td (Gamma) Tj ET";
+        let objs = [
+            "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 300 300] >>".to_string(),
+            "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 5 0 R /F3 6 0 R >> >> >>".to_string(),
+            format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_string(),
+            "5 0 R".to_string(),
+        ];
+        let mut bytes = b"%PDF-1.7\n".to_vec();
+        let mut offs = Vec::new();
+        for (i, obj) in objs.iter().enumerate() {
+            offs.push(bytes.len());
+            bytes.extend_from_slice(format!("{} 0 obj\n{obj}\nendobj\n", i + 1).as_bytes());
+        }
+        let xref = bytes.len();
+        bytes.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
+        for off in offs {
+            bytes.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
+        }
+        bytes.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
+        let doc = Document::open(std::sync::Arc::new(bytes)).unwrap();
+        let lines = text_lines(&doc, 0).unwrap();
+        let texts: Vec<_> = lines.iter().map(|l| (l.text.as_str(), l.base_font.as_str())).collect();
+        assert_eq!(texts, [("Alpha", "Helvetica"), ("Beta", "Helvetica"), ("Gamma", "Helvetica")]);
     }
 }

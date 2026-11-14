@@ -148,6 +148,199 @@ pub fn page_background(doc: &Document, page: usize) -> Result<Option<Rgb>, EditE
     Ok(None)
 }
 
+/// A coloured fill under text or a table cell: its box and its RGB colour.
+pub type PageHighlight = ([f64; 4], [f64; 3]);
+
+/// Highlights (coloured fills under text/cells) and vector border lines on the page.
+pub fn page_highlights_and_lines(doc: &Document, page: usize) -> Result<(Vec<PageHighlight>, Vec<[f64; 4]>), EditError> {
+    scan_page_geometry(doc, page, true)
+}
+
+/// Vector horizontal/vertical divider lines drawn on `page` (table rules, separators).
+pub(crate) fn page_divider_lines(doc: &Document, page: usize) -> Result<Vec<[f64; 4]>, EditError> {
+    scan_page_geometry(doc, page, false).map(|(_, lines)| lines)
+}
+
+fn scan_page_geometry(doc: &Document, page: usize, collect_highlights: bool) -> Result<(Vec<PageHighlight>, Vec<[f64; 4]>), EditError> {
+    const MAX_PATH_ITEMS: usize = 50_000;
+    let pages = pdfcraft_model::pages(doc);
+    let p = pages.get(page).ok_or(EditError::NoSuchPage(page))?;
+    let crop = p.crop(doc);
+    let resources = p.dict.get(b"Resources").map(|r| doc.resolve(r)).and_then(|r| r.as_dict().cloned()).unwrap_or_default();
+    let gstates = resources.get(b"ExtGState").map(|g| doc.resolve(g)).and_then(|g| g.as_dict().cloned()).unwrap_or_default();
+    let streams = crate::text::content_streams(doc, &p.dict);
+    let pieces = Pieces::join(&streams.iter().map(|(_, d)| d.as_slice()).collect::<Vec<_>>());
+    let ops = pieces.parse().ops;
+
+    let mut st = State { ctm: Matrix::IDENTITY, space: Space::Gray, fill: Some([0.0; 3]), alpha: 1.0, plain: true, clip: Some(Vec::new()) };
+    let mut saved: Vec<State> = Vec::new();
+    let mut lost_saves = 0usize;
+    let mut rects: Vec<Quad> = Vec::new();
+    let mut path_cur: Option<(f64, f64)> = None;
+    let mut subpath_start: Option<(f64, f64)> = None;
+    let mut segments: Vec<((f64, f64), (f64, f64))> = Vec::new();
+    let mut highlights: Vec<([f64; 4], [f64; 3])> = Vec::new();
+    let mut lines: Vec<[f64; 4]> = Vec::new();
+
+    let page_w = (crop[2] - crop[0]).abs().max(1.0);
+    let page_h = (crop[3] - crop[1]).abs().max(1.0);
+
+    let push_orthogonal_line = |lines: &mut Vec<[f64; 4]>, min_x: f64, min_y: f64, max_x: f64, max_y: f64| -> bool {
+        let w = max_x - min_x;
+        let h = max_y - min_y;
+        if w.is_finite() && h.is_finite() && ((w <= 2.5 && h >= 4.0) || (h <= 2.5 && w >= 4.0)) {
+            if lines.len() < MAX_PATH_ITEMS {
+                lines.push([min_x, min_y, max_x, max_y]);
+            }
+            true
+        } else {
+            false
+        }
+    };
+
+    for op in &ops {
+        match op.op.as_slice() {
+            b"q" => {
+                if saved.len() < MAX_SAVES {
+                    saved.push(st.clone());
+                } else {
+                    lost_saves = lost_saves.saturating_add(1);
+                }
+            }
+            b"Q" => {
+                if lost_saves > 0 {
+                    lost_saves -= 1;
+                } else if let Some(s) = saved.pop() {
+                    st = s;
+                }
+            }
+            b"cm" => {
+                if let Some(m) = Matrix::from_operands(&op.operands) {
+                    st.ctm = m.then(&st.ctm);
+                }
+            }
+            b"g" if collect_highlights => (st.space, st.fill) = (Space::Gray, op.nums::<1>().map(|[g]| [g; 3])),
+            b"rg" if collect_highlights => (st.space, st.fill) = (Space::Rgb, op.nums::<3>()),
+            b"k" if collect_highlights => (st.space, st.fill) = (Space::Cmyk, op.nums::<4>().map(cmyk)),
+            b"cs" if collect_highlights => {
+                st.space = match op.name(0) {
+                    Some(b"DeviceGray" | b"G") => Space::Gray,
+                    Some(b"DeviceRGB" | b"RGB") => Space::Rgb,
+                    Some(b"DeviceCMYK" | b"CMYK") => Space::Cmyk,
+                    _ => Space::Other,
+                };
+                st.fill = None;
+            }
+            b"sc" | b"scn" if collect_highlights => st.fill = colour(st.space, op),
+            b"gs" if collect_highlights => {
+                if let Some(g) = op.name(0).and_then(|n| gstates.get(n)).map(|g| doc.resolve(g)).and_then(|g| g.as_dict().cloned()) {
+                    apply_gstate(doc, &g, &mut st);
+                }
+            }
+            b"re" => {
+                if let Some([x, y, w, h]) = op.nums::<4>()
+                    && rects.len() < MAX_PATH_ITEMS
+                {
+                    rects.push(quad(&st.ctm, [x, y, x + w, y + h]));
+                }
+            }
+            b"m" => {
+                if let Some([x, y]) = op.nums::<2>() {
+                    let pt = st.ctm.apply(x, y);
+                    if pt.0.is_finite() && pt.1.is_finite() {
+                        path_cur = Some(pt);
+                        subpath_start = Some(pt);
+                    }
+                }
+            }
+            b"l" => {
+                if let Some([x, y]) = op.nums::<2>()
+                    && let Some(prev) = path_cur
+                {
+                    let pt = st.ctm.apply(x, y);
+                    if pt.0.is_finite() && pt.1.is_finite() {
+                        if segments.len() < MAX_PATH_ITEMS {
+                            segments.push((prev, pt));
+                        }
+                        path_cur = Some(pt);
+                    }
+                }
+            }
+            b"h" => {
+                if let (Some(prev), Some(start)) = (path_cur, subpath_start) {
+                    if segments.len() < MAX_PATH_ITEMS {
+                        segments.push((prev, start));
+                    }
+                    path_cur = Some(start);
+                }
+            }
+            b"f" | b"F" | b"f*" | b"B" | b"B*" => {
+                let stroked = matches!(op.op.as_slice(), b"B" | b"B*");
+                for q in &rects {
+                    let min_x = q.iter().map(|p| p.0).fold(f64::MAX, f64::min);
+                    let min_y = q.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+                    let max_x = q.iter().map(|p| p.0).fold(f64::MIN, f64::max);
+                    let max_y = q.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+                    let is_rule = push_orthogonal_line(&mut lines, min_x, min_y, max_x, max_y);
+                    if !is_rule {
+                        if stroked {
+                            for i in 0..4 {
+                                let (a, b) = (q[i], q[(i + 1) % 4]);
+                                push_orthogonal_line(&mut lines, a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1));
+                            }
+                        }
+                        if collect_highlights && let Some(color) = st.fill {
+                            let w = max_x - min_x;
+                            let h = max_y - min_y;
+                            let is_white = color.iter().all(|&c| c >= 0.98);
+                            let is_black = color.iter().all(|&c| c <= 0.05);
+                            if !is_white && !is_black && w > 4.0 && h > 4.0 && w < page_w * 0.95 && h < page_h * 0.95 {
+                                highlights.push(([min_x, min_y, max_x, max_y], color.map(|v| v.clamp(0.0, 1.0))));
+                            }
+                        }
+                    }
+                }
+                for &(a, b) in &segments {
+                    push_orthogonal_line(&mut lines, a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1));
+                }
+                rects.clear();
+                segments.clear();
+                path_cur = None;
+                subpath_start = None;
+            }
+            b"S" | b"s" => {
+                for q in &rects {
+                    let min_x = q.iter().map(|p| p.0).fold(f64::MAX, f64::min);
+                    let min_y = q.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+                    let max_x = q.iter().map(|p| p.0).fold(f64::MIN, f64::max);
+                    let max_y = q.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+                    if !push_orthogonal_line(&mut lines, min_x, min_y, max_x, max_y) {
+                        for i in 0..4 {
+                            let (a, b) = (q[i], q[(i + 1) % 4]);
+                            push_orthogonal_line(&mut lines, a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1));
+                        }
+                    }
+                }
+                for &(a, b) in &segments {
+                    push_orthogonal_line(&mut lines, a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1));
+                }
+                rects.clear();
+                segments.clear();
+                path_cur = None;
+                subpath_start = None;
+            }
+            b"n" => {
+                rects.clear();
+                segments.clear();
+                path_cur = None;
+                subpath_start = None;
+            }
+            _ => {}
+        }
+    }
+    Ok((highlights, lines))
+}
+
 /// CMYK to RGB, as a plain conversion without colour management.
 fn cmyk([c, m, y, k]: [f64; 4]) -> Rgb {
     [(1.0 - c) * (1.0 - k), (1.0 - m) * (1.0 - k), (1.0 - y) * (1.0 - k)]

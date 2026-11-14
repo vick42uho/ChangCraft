@@ -27,6 +27,8 @@ pub mod export;
 pub mod field_table;
 pub mod js;
 pub mod links;
+mod object_clip;
+pub use object_clip::{ObjectClip, ObjectClipboard};
 pub mod ocr;
 pub mod optimizer;
 pub mod print_raster;
@@ -93,6 +95,8 @@ pub enum ImageEdit {
         bytes: Arc<Vec<u8>>,
     },
     Delete,
+    /// Promote a Form XObject into editable page operators.
+    Ungroup,
 }
 pub use pdfcraft_fonts::{MAX_SIGNATURE_CHARS, ScriptOutline, script_missing, script_outline, undrawable_message};
 
@@ -291,12 +295,15 @@ fn scope_of(edit: &Edit) -> Scope {
         | Edit::StyleAnnotation { .. }
         | Edit::FillAnnotation { .. }
         | Edit::FontSizeAnnotation { .. }
+        | Edit::FontAnnotation { .. }
         | Edit::SetAnnotationInfo { .. } => Scope::Comments,
         Edit::AddLink { .. } | Edit::SetLink { .. } | Edit::DeleteLink { .. } | Edit::RemoveLinks { .. } | Edit::AddLinks { .. } => Scope::Links,
         Edit::SetFieldValue { .. } | Edit::ResetForm { .. } | Edit::SetFieldImage { .. } | Edit::ApplyScriptChanges { .. } => Scope::Form,
         // Page content, resources and added content/marks only: the page tree, annotations,
         // fields, links and document metadata are untouched (see `refresh_content`).
         Edit::MoveObjects { .. }
+        | Edit::DeleteObjects { .. }
+        | Edit::PasteObjects { .. }
         | Edit::EditTextLine { .. }
         | Edit::EditTextBlock { .. }
         | Edit::EditPageImage { .. }
@@ -345,78 +352,97 @@ struct Editor {
     /// for each widget while the objects it was drawn from are unchanged; see
     /// [`pdfcraft_forms::FieldAppearanceCache`].
     field_appearances: pdfcraft_forms::FieldAppearanceCache,
-    /// The text blocks last computed for one page, reused while the document is unchanged.
-    text_blocks: TextBlocksCache,
-    /// The embedded faces the text editor offers for one page, reused while the document is
+    /// The text lines last extracted per page, reused while the document is unchanged.
+    text_lines: PageCache<Vec<pdfcraft_edit::TextLine>>,
+    /// The text blocks last computed per page, reused while the document is unchanged.
+    text_blocks: PageCache<Vec<pdfcraft_edit::TextBlock>>,
+    /// The embedded faces the text editor offers per page, reused while the document is
     /// unchanged: the Format text panel asks for them every frame.
-    editor_fonts: TextEditorFontsCache,
+    editor_fonts: PageCache<Vec<pdfcraft_edit::text::TextEditorFont>>,
+    /// The mixed editable objects per page, reused while the document is unchanged.
+    editable_objects: PageCache<Vec<EditableObject>>,
 }
 
-/// One page's editor faces ([`pdfcraft_edit::text::text_editor_fonts`]) and the document state
-/// they were read from. Reading them decompresses every embedded font program on the page, so
-/// the Format text panel must not pay it on each frame. Keyed like [`TextBlocksCache`].
+/// The state a [`PageCache`] was filled from, and the cached pages by number.
+type CachedPages<T> = Option<(pdfcraft_cos::ReadState, std::collections::HashMap<usize, Arc<T>>)>;
+
+/// Per-page derived data keyed by the document [`pdfcraft_cos::ReadState`] it was computed from.
+/// Holding a map by page number prevents visible multi-page canvases from evicting each other.
 #[derive(Default)]
-struct TextEditorFontsCache(std::sync::Mutex<Option<CachedTextEditorFonts>>);
+struct PageCache<T>(std::sync::Mutex<CachedPages<T>>);
 
-/// The document state, the page (0-based) and its editor faces.
-type CachedTextEditorFonts = (pdfcraft_cos::ReadState, usize, Arc<Vec<pdfcraft_edit::text::TextEditorFont>>);
-
-impl Clone for TextEditorFontsCache {
+impl<T> Clone for PageCache<T> {
     fn clone(&self) -> Self {
-        // A poisoned cache only loses the cached faces.
+        // A poisoned cache only loses the cached pages.
         Self(std::sync::Mutex::new(self.0.lock().ok().and_then(|c| c.clone())))
     }
 }
 
-/// One page's text blocks ([`pdfcraft_edit::text_blocks`]) and the document state they were read
-/// from. Opening a paragraph and applying its edit both need them, and grouping a long page is not
-/// cheap. The state ([`pdfcraft_cos::ReadState`]) changes with every edit and save and returns
-/// with undo, so a stale entry never matches, also after the document has been edited.
-#[derive(Default)]
-struct TextBlocksCache(std::sync::Mutex<Option<CachedTextBlocks>>);
+impl<T> PageCache<T> {
+    fn get(&self, cos: &pdfcraft_cos::Document, page: usize) -> Option<Arc<T>> {
+        let cache = self.0.lock().ok()?;
+        let (state, pages) = cache.as_ref()?;
+        if state.matches(cos) { pages.get(&page).cloned() } else { None }
+    }
 
-/// The document state, the page (0-based) and its text blocks.
-type CachedTextBlocks = (pdfcraft_cos::ReadState, usize, Arc<Vec<pdfcraft_edit::TextBlock>>);
-
-impl Clone for TextBlocksCache {
-    fn clone(&self) -> Self {
-        // A poisoned cache only loses the cached blocks.
-        Self(std::sync::Mutex::new(self.0.lock().ok().and_then(|c| c.clone())))
+    fn insert(&self, cos: &pdfcraft_cos::Document, page: usize, value: Arc<T>) {
+        if let Ok(mut cache) = self.0.lock() {
+            if let Some((state, pages)) = cache.as_mut()
+                && state.matches(cos)
+            {
+                pages.insert(page, value);
+            } else {
+                let mut pages = std::collections::HashMap::new();
+                pages.insert(page, value);
+                *cache = Some((cos.read_state(), pages));
+            }
+        }
     }
 }
 
 impl Editor {
+    /// The text lines on `page` (0-based), from the cache when the document hasn't changed.
+    fn text_lines(&self, page: usize) -> Result<Arc<Vec<pdfcraft_edit::TextLine>>, EditError> {
+        if let Some(lines) = self.text_lines.get(&self.cos, page) {
+            return Ok(lines);
+        }
+        let lines = Arc::new(pdfcraft_edit::text_lines(&self.cos, page)?);
+        self.text_lines.insert(&self.cos, page, lines.clone());
+        Ok(lines)
+    }
+
     /// The text blocks on `page` (0-based), from the cache when the document hasn't changed.
     fn text_blocks(&self, page: usize) -> Result<Arc<Vec<pdfcraft_edit::TextBlock>>, EditError> {
-        if let Ok(cache) = self.text_blocks.0.lock()
-            && let Some((state, p, blocks)) = cache.as_ref()
-            && *p == page
-            && state.matches(&self.cos)
-        {
-            return Ok(blocks.clone());
+        if let Some(blocks) = self.text_blocks.get(&self.cos, page) {
+            return Ok(blocks);
         }
-        let blocks = Arc::new(pdfcraft_edit::text_blocks(&self.cos, page)?);
-        if let Ok(mut cache) = self.text_blocks.0.lock() {
-            *cache = Some((self.cos.read_state(), page, blocks.clone()));
-        }
+        let lines = self.text_lines(page)?;
+        let blocks = Arc::new(pdfcraft_edit::text_blocks_from_doc_with_lines(&self.cos, page, &lines));
+        self.text_blocks.insert(&self.cos, page, blocks.clone());
         Ok(blocks)
     }
 
     /// The embedded faces the text editor offers for `page` (0-based), from the cache when the
     /// document hasn't changed.
     fn editor_fonts(&self, page: usize) -> Result<Arc<Vec<pdfcraft_edit::text::TextEditorFont>>, EditError> {
-        if let Ok(cache) = self.editor_fonts.0.lock()
-            && let Some((state, p, fonts)) = cache.as_ref()
-            && *p == page
-            && state.matches(&self.cos)
-        {
-            return Ok(fonts.clone());
+        if let Some(fonts) = self.editor_fonts.get(&self.cos, page) {
+            return Ok(fonts);
         }
-        let fonts = Arc::new(pdfcraft_edit::text::text_editor_fonts(&self.cos, page)?);
-        if let Ok(mut cache) = self.editor_fonts.0.lock() {
-            *cache = Some((self.cos.read_state(), page, fonts.clone()));
-        }
+        let lines = self.text_lines(page).ok();
+        let fonts = Arc::new(pdfcraft_edit::text::text_editor_fonts_with_lines(&self.cos, page, lines.as_deref().map(Vec::as_slice))?);
+        self.editor_fonts.insert(&self.cos, page, fonts.clone());
         Ok(fonts)
+    }
+
+    /// The editable objects on `page` (0-based), from the cache when the document hasn't changed.
+    fn editable_objects(&self, page: usize) -> Result<Arc<Vec<EditableObject>>, EditError> {
+        if let Some(objects) = self.editable_objects.get(&self.cos, page) {
+            return Ok(objects);
+        }
+        let lines = self.text_lines(page)?;
+        let objects = Arc::new(pdfcraft_edit::editable_objects_with_lines(&self.cos, page, Some(&lines))?);
+        self.editable_objects.insert(&self.cos, page, objects.clone());
+        Ok(objects)
     }
 }
 
@@ -572,7 +598,7 @@ impl Document {
     /// appear once. Rectangles are user-space points, independent of the viewer's zoom.
     pub fn editable_objects(&self, page: usize) -> Result<Vec<EditableObject>, String> {
         let editor = self.editor.as_ref().ok_or("the document can't be read")?;
-        pdfcraft_edit::editable_objects(&editor.cos, page).map_err(|e| e.to_string())
+        editor.editable_objects(page).map(|o| o.as_ref().clone()).map_err(|e| e.to_string())
     }
 
     /// Displayed top-left-origin motion to a user-space vector. Use the linear map only,
@@ -646,7 +672,7 @@ impl Document {
 
     /// Edit a PDF ▸ Edit text: the lines of existing text on `page` (0-based).
     pub fn text_lines(&self, page: usize) -> Vec<pdfcraft_edit::TextLine> {
-        self.editor.as_ref().and_then(|e| pdfcraft_edit::text_lines(&e.cos, page).ok()).unwrap_or_default()
+        self.editor.as_ref().and_then(|e| e.text_lines(page).ok()).map(|l| l.as_ref().clone()).unwrap_or_default()
     }
 
     /// The form's calculation order: its calculated fields in the order they calculate, what each
@@ -1571,6 +1597,12 @@ pub enum Edit {
         index: usize,
         size: f64,
     },
+    /// Change the font family of a text box, typewriter text or callout.
+    FontAnnotation {
+        page: usize,
+        index: usize,
+        font: String,
+    },
     /// Comment properties ▸ General / note icon.
     SetAnnotationInfo {
         page: usize,
@@ -1708,6 +1740,15 @@ pub enum Edit {
     MoveObjects {
         page: usize,
         objects: Vec<ObjectTarget>,
+        offset: [f64; 2],
+    },
+    DeleteObjects {
+        page: usize,
+        objects: Vec<ObjectTarget>,
+    },
+    PasteObjects {
+        page: usize,
+        clip: std::sync::Arc<ObjectClip>,
         offset: [f64; 2],
     },
     /// Edit text in a paragraph box: replace paragraph `block` (from `Document::text_blocks`),
@@ -2123,9 +2164,11 @@ impl Edit {
             Edit::MoveAnnotation { .. } => Label::of("Move comment"),
             Edit::ReshapeAnnotation { .. } => Label::of("Reshape comment"),
             Edit::ResizeAnnotation { .. } => Label::of("Resize comment"),
-            Edit::StyleAnnotation { .. } | Edit::FillAnnotation { .. } | Edit::FontSizeAnnotation { .. } | Edit::SetAnnotationInfo { .. } => {
-                Label::of("Change comment properties")
-            }
+            Edit::StyleAnnotation { .. }
+            | Edit::FillAnnotation { .. }
+            | Edit::FontSizeAnnotation { .. }
+            | Edit::FontAnnotation { .. }
+            | Edit::SetAnnotationInfo { .. } => Label::of("Change comment properties"),
             Edit::SetFieldValue { name, .. } => Label::with("Fill in {name}", name.as_str()),
             Edit::SetFieldImage { name, .. } => Label::with("Set the image of {name}", name.as_str()),
             Edit::ResetForm { .. } => Label::of("Clear form"),
@@ -2155,6 +2198,8 @@ impl Edit {
             Edit::EditTextLine { .. } | Edit::EditTextBlock { .. } => Label::of("Edit text"),
             Edit::RegisterTextFont { .. } => Label::of("Load document font"),
             Edit::MoveObjects { objects, .. } => plural("Move object", "Move objects", objects.len()),
+            Edit::DeleteObjects { .. } => Label::of("Delete content"),
+            Edit::PasteObjects { .. } => Label::of("Paste"),
             Edit::EditPageImage { change, .. } => Label::of(match change {
                 ImageEdit::Move(_) => "Move image",
                 ImageEdit::Rotate(_) | ImageEdit::RotateBy(_) => "Rotate image",
@@ -2162,6 +2207,7 @@ impl Edit {
                 ImageEdit::Flip { .. } => "Flip image",
                 ImageEdit::Replace { .. } => "Replace image",
                 ImageEdit::Delete => "Delete image",
+                ImageEdit::Ungroup => "Edit content",
             }),
             Edit::AddHeaderFooter { replace: false, .. } => Label::of("Add header & footer"),
             Edit::AddHeaderFooter { .. } => Label::of("Update header & footer"),
@@ -2284,6 +2330,7 @@ fn check_permission(edit: &Edit, p: &pdfcraft_cos::Permissions) -> Result<(), Ed
         | Edit::StyleAnnotation { .. }
         | Edit::FillAnnotation { .. }
         | Edit::FontSizeAnnotation { .. }
+        | Edit::FontAnnotation { .. }
         | Edit::SetAnnotationInfo { .. }
         | Edit::SetMeasurementScale { .. } => {
             if p.annotate() {
@@ -2317,6 +2364,8 @@ fn check_permission(edit: &Edit, p: &pdfcraft_cos::Permissions) -> Result<(), Ed
         | Edit::AddImage { .. }
         | Edit::UpdateContent { .. }
         | Edit::MoveObjects { .. }
+        | Edit::DeleteObjects { .. }
+        | Edit::PasteObjects { .. }
         | Edit::DeleteContent { .. }
         | Edit::ReplaceImage { .. }
         | Edit::ClearRedactions
@@ -2388,6 +2437,10 @@ struct EditCtx {
     /// Fields the edit renamed to keep imported names separate (old → new), for the repair
     /// log and the undo label.
     renamed_fields: Vec<(String, String)>,
+    /// Pre-extracted text lines for the page being moved so `MoveObjects` avoids re-parsing.
+    move_lines: Option<(usize, Arc<Vec<pdfcraft_edit::TextLine>>)>,
+    /// Validated post-move object inventory produced by `MoveObjects` to seed the page cache.
+    moved_inventory: Option<(usize, pdfcraft_cos::ReadState, Vec<EditableObject>)>,
 }
 
 impl EditCtx {
@@ -2414,6 +2467,8 @@ impl EditCtx {
             seed,
             count: 0,
             renamed_fields: Vec::new(),
+            move_lines: None,
+            moved_inventory: None,
         }
     }
 
@@ -2554,6 +2609,7 @@ fn run_edit(doc: &mut pdfcraft_cos::Document, edit: &Edit, cx: &mut EditCtx) -> 
         }
         Edit::FillAnnotation { page, index, fill } => pdfcraft_annot::set_fill(doc, *page, *index, *fill, &cx.meta())?,
         Edit::FontSizeAnnotation { page, index, size } => pdfcraft_annot::set_font_size(doc, *page, *index, *size, &cx.meta())?,
+        Edit::FontAnnotation { page, index, font } => pdfcraft_annot::set_font_family(doc, *page, *index, font, &cx.meta())?,
         Edit::SetAnnotationInfo { page, index, author, subject, icon } => {
             pdfcraft_annot::set_info(doc, *page, *index, author.as_deref(), subject.as_deref(), *icon, &cx.meta())?;
         }
@@ -2699,10 +2755,120 @@ fn run_edit(doc: &mut pdfcraft_cos::Document, edit: &Edit, cx: &mut EditCtx) -> 
                 }
                 ImageEdit::Crop(keep) => pdfcraft_edit::ImageChange::Crop(*keep),
                 ImageEdit::Delete => pdfcraft_edit::ImageChange::Delete,
+                ImageEdit::Ungroup => pdfcraft_edit::ImageChange::Ungroup,
             };
-            pdfcraft_edit::change_image(doc, *page, *index, &c)?;
+            let page_model = pdfcraft_model::pages(doc)
+                .into_iter()
+                .nth(*page)
+                .ok_or_else(|| EditError::Edit(pdfcraft_edit::EditError::Invalid(format!("page {} not found", page + 1))))?;
+            let target_stream_obj = match page_model.dict.get(b"Contents") {
+                None => None,
+                Some(contents) => match &*doc.resolve(contents) {
+                    pdfcraft_cos::Object::Array(a) => a.get(img.stream).and_then(|o| o.as_ref()),
+                    _ if img.stream == 0 => contents.as_ref(),
+                    _ => None,
+                },
+            };
+            let added_items: Vec<(usize, pdfcraft_edit::Added)> = pdfcraft_edit::list_added(doc).into_iter().filter(|a| a.page == *page).enumerate().collect();
+            // Ownership belongs to the drawing stream, not the XObject: original and added images may
+            // show the same resource without sharing an editable item.
+            let shows_image = |a: &pdfcraft_edit::Added| img.object.is_some_and(|t| matches!(&a.content, AddedContent::Image(ai) if ai.image == t));
+            let matched_added = added_items.iter().find(|(_, a)| target_stream_obj == Some(a.obj) && (img.object.is_none() || shows_image(a)));
+
+            let mut ai_to_update = None;
+            if let Some((added_idx, added_item)) = matched_added
+                && let AddedContent::Image(ai) = added_item.content.clone()
+            {
+                // Page visibility alone is not a crop: dragging an added image over the page edge
+                // must not discard its editable added-item identity on the next resize.
+                let has_active_crop = ai.crop.iter().any(|v| v.abs() > 1e-6)
+                    || img.frame_rect().is_none_or(|frame| frame.iter().zip(img.rect).any(|(a, b)| (a - b).abs() > 1e-4));
+                let should_promote = has_active_crop || matches!(change, ImageEdit::Crop(_) | ImageEdit::RotateBy(_) | ImageEdit::Delete | ImageEdit::Ungroup);
+
+                if should_promote {
+                    doc.update_dict(added_item.obj, |d| {
+                        d.remove(b"PCAdded");
+                        d.remove(b"PCMark");
+                    })
+                    .map_err(|e| EditError::Edit(pdfcraft_edit::EditError::Invalid(e.to_string())))?;
+                } else {
+                    ai_to_update = Some((*added_idx, ai));
+                }
+            }
+
+            if let Some((added_idx, mut ai)) = ai_to_update {
+                use pdfcraft_content::Matrix;
+                let view = Matrix(page_model.view_matrix(doc));
+                let to_display = view.invert().ok_or_else(|| EditError::Edit(pdfcraft_edit::EditError::Invalid("invalid page transform".into())))?;
+
+                match change {
+                    ImageEdit::Move(to) => {
+                        ai.rect = to_display.bbox(*to);
+                        pdfcraft_edit::update_content(doc, *page, added_idx, &AddedContent::Image(ai))?;
+                    }
+                    ImageEdit::Flip { .. } => {
+                        let pdfcraft_edit::ImageChange::Transform(t) = c else {
+                            return Err(EditError::Edit(pdfcraft_edit::EditError::Invalid("expected transform".into())));
+                        };
+                        let t_display = view.then(&Matrix(t)).then(&to_display);
+                        let [ta, tb, tc, td, _, _] = t_display.0;
+                        let is_parallel = tb.abs() < 1e-5 && tc.abs() < 1e-5;
+                        let is_perpendicular = ta.abs() < 1e-5 && td.abs() < 1e-5;
+
+                        let (quarters_ccw, disp_flip_h, disp_flip_v) = if is_parallel {
+                            (0, ta < 0.0, td < 0.0)
+                        } else if is_perpendicular {
+                            match (tb > 0.0, tc > 0.0) {
+                                (true, false) => (1, false, false),
+                                (false, true) => (3, false, false),
+                                (true, true) => (1, false, true),
+                                (false, false) => (1, true, false),
+                            }
+                        } else {
+                            return Err(EditError::Edit(pdfcraft_edit::EditError::Invalid(
+                                "non-axis-aligned transforms are not supported for added images".into(),
+                            )));
+                        };
+                        let (toggle_h, toggle_v) = if ai.rotation % 2 == 1 { (disp_flip_v, disp_flip_h) } else { (disp_flip_h, disp_flip_v) };
+                        ai.flip_h ^= toggle_h;
+                        ai.flip_v ^= toggle_v;
+                        ai.rotation = (ai.rotation + quarters_ccw) % 4;
+                        ai.rect = t_display.bbox(ai.rect);
+                        pdfcraft_edit::update_content(doc, *page, added_idx, &AddedContent::Image(ai))?;
+                    }
+                    ImageEdit::Rotate(q) => {
+                        let k = ((4 - q.rem_euclid(4)) % 4) as u8;
+                        ai.rotation = (ai.rotation + k) % 4;
+                        let r = ai.rect;
+                        let (cx, cy) = ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
+                        if k % 2 == 1 {
+                            let (w, h) = (r[2] - r[0], r[3] - r[1]);
+                            ai.rect = [cx - h / 2.0, cy - w / 2.0, cx + h / 2.0, cy + w / 2.0];
+                        }
+                        pdfcraft_edit::update_content(doc, *page, added_idx, &AddedContent::Image(ai))?;
+                    }
+                    ImageEdit::Replace { .. } => {
+                        let pdfcraft_edit::ImageChange::Replace(new_image) = c else {
+                            return Err(EditError::Edit(pdfcraft_edit::EditError::Invalid("expected replace".into())));
+                        };
+                        ai.image = new_image;
+                        pdfcraft_edit::update_content(doc, *page, added_idx, &AddedContent::Image(ai))?;
+                    }
+                    ImageEdit::Crop(_) | ImageEdit::RotateBy(_) | ImageEdit::Delete | ImageEdit::Ungroup => {
+                        pdfcraft_edit::change_image(doc, *page, *index, &c)?;
+                    }
+                }
+            } else {
+                pdfcraft_edit::change_image(doc, *page, *index, &c)?;
+            }
         }
-        Edit::MoveObjects { page, objects, offset } => pdfcraft_edit::move_objects(doc, *page, objects, *offset)?,
+        Edit::MoveObjects { page, objects, offset } => {
+            let lines = cx.move_lines.as_ref().filter(|(p, _)| p == page).map(|(_, l)| l.as_slice());
+            let updated = pdfcraft_edit::move_objects_with_inventory(doc, *page, objects, *offset, lines)?;
+            cx.moved_inventory = Some((*page, doc.read_state(), updated));
+        }
+        Edit::DeleteObjects { page, objects } => crate::object_clip::delete(doc, *page, objects, |doc, edit| run_edit(doc, edit, cx))?,
+        Edit::PasteObjects { page, clip, offset } => crate::object_clip::paste(doc, *page, clip, *offset)?,
         Edit::EditTextBlock { page, block, text, style } => {
             pdfcraft_edit::rewrite_block(doc, *page, *block, Some(text), style)?;
         }
@@ -3716,8 +3882,10 @@ impl Session {
                         keys,
                         appearances: AppearanceCache::default(),
                         field_appearances: pdfcraft_forms::FieldAppearanceCache::default(),
-                        text_blocks: TextBlocksCache::default(),
-                        editor_fonts: TextEditorFontsCache::default(),
+                        text_lines: PageCache::default(),
+                        text_blocks: PageCache::default(),
+                        editor_fonts: PageCache::default(),
+                        editable_objects: PageCache::default(),
                     }),
                     None,
                 )
@@ -3825,6 +3993,9 @@ impl Session {
         // Nothing to bake: leave undo history and the dirty flag alone.
         if matches!(&edit, Edit::FlattenFillSign) && !pdfcraft_annot::has_visible_fill_sign(&editor.cos) {
             return Ok(());
+        }
+        if let Edit::MoveObjects { page, .. } = &edit {
+            cx.move_lines = editor.text_lines(*page).ok().map(|lines| (*page, lines));
         }
         let mut next = editor.cos.clone();
         if !js_off && uses_scripts(&edit) {
@@ -3963,6 +4134,12 @@ impl Session {
                 Self::show_released(doc);
             }
             return Err(e);
+        }
+        if let Some((moved_page, state, updated)) = cx.moved_inventory.take()
+            && let Some(ed) = doc.editor.as_ref()
+            && state.matches(&ed.cos)
+        {
+            ed.editable_objects.insert(&ed.cos, moved_page, Arc::new(updated));
         }
         doc.dirty = true;
         doc.generation += 1;

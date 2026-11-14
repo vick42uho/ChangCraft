@@ -70,9 +70,12 @@ impl PdfCraftApp {
                 view.signature_drag.committed(&edit, doc.edit_generation());
                 view.move_background.committed(&edit, doc.edit_generation());
                 view.text_background.committed(&edit);
-                if let Some(page) = comment_page(&edit).or_else(|| content_page(&edit)) {
-                    // Comment and content edits change one page: keep every other raster.
-                    view.page_changed(page);
+                if let Some(pages) = (doc.info.pages.len() == page_count_before).then(|| single_pages(&edit)).flatten() {
+                    // Comment, content edits, and batches of them (such as cross-page moves) change
+                    // only their own pages: keep every other page's raster, tiles, and text cache.
+                    for page in pages {
+                        view.page_changed(page);
+                    }
                 } else if let Some(form_before) = form_before
                     && doc.info.pages.len() == page_count_before
                     && doc.xfa.is_some() == had_xfa
@@ -564,7 +567,7 @@ impl PdfCraftApp {
         }
         let author = self.comment_prefs.author.clone();
         let rotation = self.session.get(id).map_or(0, |doc| crate::comments::page_rotation(&doc.info, tb.page));
-        let edit = crate::fill_sign::typed(tb.page, tb.at, &text, tb.size, rotation, &author);
+        let edit = crate::fill_sign::typed_with_font(tb.page, tb.at, &text, tb.size, rotation, &author, &tb.font);
         if self.apply_edit(edit) {
             if let Some(view) = self.views.get_mut(i) {
                 view.fill_text = None;
@@ -960,6 +963,29 @@ impl PdfCraftApp {
     }
 }
 
+/// The unique pages changed when `edit` is one single-page comment/content edit or a batch
+/// composed solely of them (such as a cross-page object move), so unaffected pages keep their
+/// rasters and tiles cached.
+fn single_pages(edit: &Edit) -> Option<Vec<usize>> {
+    fn collect(edit: &Edit, out: &mut Vec<usize>, depth: usize) -> bool {
+        if depth > 16 {
+            return false;
+        }
+        if let Some(page) = comment_page(edit).or_else(|| content_page(edit)) {
+            if !out.contains(&page) {
+                out.push(page);
+            }
+            return true;
+        }
+        if let Edit::Batch { edits, .. } = edit {
+            return !edits.is_empty() && edits.iter().all(|inner| collect(inner, out, depth + 1));
+        }
+        false
+    }
+    let mut pages = Vec::new();
+    collect(edit, &mut pages, 0).then_some(pages)
+}
+
 /// The single page a content edit changes (`None` for other edits). Like comment edits,
 /// these leave every other page's bytes, geometry and text alone, so their rasters stay valid.
 fn content_page(edit: &Edit) -> Option<usize> {
@@ -990,6 +1016,7 @@ fn comment_page(edit: &Edit) -> Option<usize> {
         | Edit::StyleAnnotation { page, .. }
         | Edit::FillAnnotation { page, .. }
         | Edit::FontSizeAnnotation { page, .. }
+        | Edit::FontAnnotation { page, .. }
         | Edit::SetAnnotationInfo { page, .. } => Some(*page),
         _ => None,
     }
@@ -1590,15 +1617,33 @@ mod revert_draft_tests {
 
 #[cfg(test)]
 mod content_page_tests {
-    use super::content_page;
+    use super::{content_page, single_pages};
     use pdfcraft_engine::{Edit, ObjectKind, ObjectTarget};
 
-    /// Single-page content edits keep every other page's rasters; anything else still
-    /// invalidates the whole document.
+    /// Single-page content edits and cross-page batches keep every other page's rasters;
+    /// anything else still invalidates the whole document.
     #[test]
     fn single_page_content_edits_map_to_their_page() {
         let moved = Edit::MoveObjects { page: 3, objects: vec![ObjectTarget { kind: ObjectKind::Text, index: 0 }], offset: [1.0, 0.0] };
         assert_eq!(content_page(&moved), Some(3));
+        assert_eq!(single_pages(&moved), Some(vec![3]));
+        let cross_page = Edit::Batch {
+            label: "Move objects".into(),
+            edits: vec![
+                Edit::MoveObjects { page: 2, objects: vec![ObjectTarget { kind: ObjectKind::Text, index: 0 }], offset: [99999.0, 0.0] },
+                moved,
+            ],
+        };
+        assert_eq!(single_pages(&cross_page), Some(vec![2, 3]));
+        let mixed = Edit::Batch {
+            label: "Mixed".into(),
+            edits: vec![
+                Edit::MoveObjects { page: 1, objects: vec![ObjectTarget { kind: ObjectKind::Text, index: 0 }], offset: [1.0, 0.0] },
+                Edit::RotatePages { pages: vec![0], degrees: 90 },
+            ],
+        };
+        assert_eq!(single_pages(&mixed), None);
+        assert_eq!(single_pages(&Edit::Batch { label: "Empty".into(), edits: Vec::new() }), None);
         assert_eq!(content_page(&Edit::RotatePages { pages: vec![0], degrees: 90 }), None);
         assert_eq!(content_page(&Edit::SetInfo { key: "Title".into(), value: "x".into() }), None);
     }

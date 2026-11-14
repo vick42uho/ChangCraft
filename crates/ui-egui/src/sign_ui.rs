@@ -77,6 +77,15 @@ impl Default for NewIdDraft {
     }
 }
 
+impl Drop for NewIdDraft {
+    fn drop(&mut self) {
+        use zeroize::Zeroize as _;
+        self.password.zeroize();
+        self.confirm.zeroize();
+        self.file_password.zeroize();
+    }
+}
+
 /// What a visible signature shows on its left (Acrobat: Configure Signature Appearance ▸ Text,
 /// Draw or Image). The one last signed with is remembered.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -136,6 +145,12 @@ impl SignDraft {
             error: None,
             confirm_remove: None,
         }
+    }
+}
+
+impl Drop for SignDraft {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.password);
     }
 }
 
@@ -1503,8 +1518,10 @@ mod tests {
         let mut draft = SignDraft::new(0, None, None, None, &[]);
         // P-256 keeps the test fast.
         let key = KEY_ALGORITHMS.iter().position(|k| k.1 == "p256").unwrap();
-        draft.new_id =
-            NewIdDraft { name: "Grace Hopper".into(), key, password: "secret12".into(), confirm: "secret12".into(), ..NewIdDraft::default() };
+        draft.new_id.name = "Grace Hopper".into();
+        draft.new_id.key = key;
+        draft.new_id.password = "secret12".into();
+        draft.new_id.confirm = "secret12".into();
         app.sign_draft = Some(draft);
         let i = app.create_digital_id()?;
         Ok(PathBuf::from(&app.digital_ids[i].path))

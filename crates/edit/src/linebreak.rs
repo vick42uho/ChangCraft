@@ -50,7 +50,8 @@ fn no_start(c: char) -> bool {
 fn no_end(c: char) -> bool {
     matches!(
         c,
-        '\u{0E40}'..='\u{0E44}' // Thai leading vowels (Sara E, Ae, O, Ai, Faimai)
+        '\u{0E40}'
+            ..='\u{0E44}' // Thai leading vowels (Sara E, Ae, O, Ai, Faimai)
             | '('
             | '['
             | '{'

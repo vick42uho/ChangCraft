@@ -57,7 +57,8 @@ impl Document {
     ) -> Result<pdfcraft_edit::text::TextEditLayout, String> {
         guard(|| {
             let editor = self.editor.as_ref().ok_or("the document can't be read")?;
-            pdfcraft_edit::text::text_edit_layout(&editor.cos, page, block, text, style).map_err(|e| e.to_string())
+            let lines = editor.text_lines(page).map_err(|e| e.to_string())?;
+            pdfcraft_edit::text::text_edit_layout_with_lines(&editor.cos, page, block, text, style, &lines).map_err(|e| e.to_string())
         })?
     }
 
@@ -72,8 +73,9 @@ impl Document {
     pub fn text_edit_preview(&self, page: usize, block: usize) -> Result<TextEditPreview, String> {
         guard(|| {
             let editor = self.editor.as_ref().ok_or("the document can't be read")?;
+            let lines = editor.text_lines(page).map_err(|e| e.to_string())?;
             let mut cos = editor.cos.clone();
-            pdfcraft_edit::clear_block(&mut cos, page, block).map_err(|e| e.to_string())?;
+            pdfcraft_edit::clear_block_with_lines(&mut cos, page, block, &lines).map_err(|e| e.to_string())?;
             let bytes = Arc::new(pdfcraft_cos::write_incremental(&cos, &pdfcraft_cos::SaveOptions::default()).map_err(|e| e.to_string())?);
             Ok(TextEditPreview { page, bytes, config: self.config.clone() })
         })?

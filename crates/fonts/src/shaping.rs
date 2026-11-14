@@ -174,6 +174,29 @@ pub fn shape_thai(text: &str) -> Result<Vec<ShapedCluster>, GlyphError> {
     shape_script(text, false, ShapedScript::Thai)
 }
 
+/// Map a font or family name to its corresponding Thai ShapedScript.
+pub fn thai_script_for_name(name: &str) -> ShapedScript {
+    let lower = name.to_lowercase();
+    if lower.contains("ibm") || lower.contains("plex") {
+        ShapedScript::ThaiIBMPlex
+    } else if lower.contains("noto") {
+        ShapedScript::ThaiNoto
+    } else if lower.contains("angsana") {
+        ShapedScript::ThaiAngsana
+    } else if lower.contains("cordia") {
+        ShapedScript::ThaiCordia
+    } else if lower.contains("browallia") || lower.contains("browalia") {
+        ShapedScript::ThaiBrowallia
+    } else {
+        ShapedScript::Thai
+    }
+}
+
+/// Shape Thai text using a specific named font family (e.g. "IBM Plex Sans Thai", "Noto Sans Thai", "Sarabun").
+pub fn shape_thai_named(text: &str, font_name: &str) -> Result<Vec<ShapedCluster>, GlyphError> {
+    shape_script(text, false, thai_script_for_name(font_name))
+}
+
 pub fn shape_script(text: &str, rtl: bool, kind: ShapedScript) -> Result<Vec<ShapedCluster>, GlyphError> {
     let (font, data) = face(kind).ok_or(GlyphError::NoFont)?;
     let shaper = data.shaper(font).build();

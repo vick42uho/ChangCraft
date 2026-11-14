@@ -5989,3 +5989,397 @@ fn mode_tabs_keep_the_hand_over_a_paragraph_scrolled_under_them() {
     click_at(&mut h, convert);
     assert_eq!(h.state().mode, pdfcraft_ui_egui::Mode::Convert, "the tab takes the click, not the paragraph's editor");
 }
+
+#[test]
+fn dragging_other_block_while_editor_open_moves_it() {
+    let mut two_block_pdf = {
+        let objs: Vec<String> = vec![
+            "<< /Type /Catalog /Pages 2 0 R >>".into(),
+            "<< /Type /Pages /Kids [4 0 R] /Count 1 /MediaBox [0 0 200 300] >>".into(),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into(),
+            "<< /Type /Page /Parent 2 0 R /Contents 5 0 R /Resources << /Font << /F1 3 0 R >> >> >>".into(),
+            {
+                let b = "BT /F1 18 Tf 20 245 Td (Alpha) Tj ET\nBT /F1 18 Tf 20 175 Td (Beta) Tj ET";
+                format!("<< /Length {} >>\nstream\n{b}\nendstream", b.len())
+            },
+        ];
+        let mut out = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, o) in objs.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj\n{o}\nendobj\n", i + 1).as_bytes());
+        }
+        let xref = out.len();
+        out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
+        for o in offsets {
+            out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+        }
+        out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
+        out
+    };
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("two_blocks.pdf", None, std::mem::take(&mut two_block_pdf)).expect("opens");
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.run_steps(2);
+
+    let r = h.state().views[0].page_screen_rect(0).expect("page 0 visible");
+    let xf = pdfcraft_ui_egui::canvas::PageXform { rect: r, rot: 0, pw: 200.0, ph: 300.0 };
+    let blocks_before = {
+        let id = h.state().views[0].id;
+        h.state().session.get(id).unwrap().text_blocks(0)
+    };
+    let alpha = blocks_before.iter().find(|b| b.text == "Alpha").expect("Alpha block").clone();
+    let beta = blocks_before.iter().find(|b| b.text == "Beta").expect("Beta block").clone();
+    let info = &h.state().session.get(h.state().views[0].id).unwrap().info.clone();
+
+    let alpha_pos = xf.user_rect(info, 0, alpha.rect.map(|v| v as f32)).center();
+    click_at(&mut h, alpha_pos);
+    assert!(h.state().views[0].line_editor.is_some());
+    h.event(egui::Event::Text("!".into()));
+    h.run_steps(2);
+    assert_eq!(h.state().views[0].line_editor.as_ref().map(|e| e.text.as_str()), Some("Alpha!"));
+
+    // Directly drag "Beta" without closing "Alpha!"'s editor first.
+    let beta_pos = xf.user_rect(info, 0, beta.rect.map(|v| v as f32)).center();
+    drag(&mut h, beta_pos, beta_pos + egui::vec2(60.0, -40.0));
+
+    let id = h.state().views[0].id;
+    let blocks_after = h.state().session.get(id).unwrap().text_blocks(0);
+    assert!(blocks_after.iter().any(|b| b.text == "Alpha!"), "open editor change committed: {blocks_after:?}");
+    let beta_after = blocks_after.iter().find(|b| b.text == "Beta").expect("Beta remains");
+    assert!(beta_after.rect[0] > beta.rect[0] + 10.0, "Beta moved right: {:?} -> {:?}", beta.rect, beta_after.rect);
+    assert!(beta_after.rect[1] > beta.rect[1] + 5.0, "Beta moved up in user space: {:?} -> {:?}", beta.rect, beta_after.rect);
+}
+
+#[test]
+fn dragging_a_paragraph_across_pages_moves_downward_and_upward() {
+    let mut h = harness(2, |app| {
+        app.set_option("zoom", "50").unwrap();
+        app.set_option("continuous", "on").unwrap();
+    });
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.run_steps(2);
+
+    let id = h.state().views[0].id;
+    let (xf0, info, b0) = {
+        let doc = h.state().session.get(id).unwrap();
+        let r0 = h.state().views[0].page_screen_rect(0).expect("page 0 visible at 50% zoom");
+        (pdfcraft_ui_egui::canvas::PageXform { rect: r0, rot: 0, pw: 200.0, ph: 300.0 }, doc.info.clone(), doc.text_blocks(0)[0].clone())
+    };
+    let r1 = h.state().views[0].page_screen_rect(1).expect("page 1 visible at 50% zoom");
+    let from_p0 = xf0.user_rect(&info, 0, b0.rect.map(|v| v as f32)).center();
+    let onto_p1 = r1.center() - egui::vec2(0.0, 45.0);
+    drag(&mut h, from_p0, onto_p1);
+
+    let (p0_after, p1_after) = {
+        let doc = h.state().session.get(id).unwrap();
+        (doc.text_blocks(0), doc.text_blocks(1))
+    };
+    assert!(p0_after.is_empty(), "Page 1 text moved off page 0: {p0_after:?}");
+    assert_eq!(p1_after.len(), 2, "Page 1 and Page 2 both on page 1: {p1_after:?}");
+    let moved = p1_after.iter().find(|b| b.text == "Page 1").expect("moved Page 1 on page 1");
+
+    // Drag "Page 1" back upward from page 1 to page 0.
+    let xf1 = pdfcraft_ui_egui::canvas::PageXform { rect: h.state().views[0].page_screen_rect(1).unwrap(), rot: 0, pw: 200.0, ph: 300.0 };
+    let from_p1 = xf1.user_rect(&info, 1, moved.rect.map(|v| v as f32)).center();
+    let onto_p0 = h.state().views[0].page_screen_rect(0).unwrap().center();
+    drag(&mut h, from_p1, onto_p0);
+
+    let doc = h.state().session.get(id).unwrap();
+    assert_eq!(doc.text_blocks(0).iter().map(|b| b.text.as_str()).collect::<Vec<_>>(), vec!["Page 1"]);
+    assert_eq!(doc.text_blocks(1).iter().map(|b| b.text.as_str()).collect::<Vec<_>>(), vec!["Page 2"]);
+}
+
+#[test]
+fn dragging_a_paragraph_across_pages_keeps_source_xform_when_scrolled_offscreen() {
+    let mut h = harness(3, |app| {
+        app.set_option("zoom", "200").unwrap();
+        app.set_option("continuous", "on").unwrap();
+    });
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.run_steps(2);
+
+    let id = h.state().views[0].id;
+    let (xf0, info, b0) = {
+        let doc = h.state().session.get(id).unwrap();
+        let r0 = h.state().views[0].page_screen_rect(0).expect("page 0 visible");
+        (pdfcraft_ui_egui::canvas::PageXform { rect: r0, rot: 0, pw: 200.0, ph: 300.0 }, doc.info.clone(), doc.text_blocks(0)[0].clone())
+    };
+    let start = xf0.user_rect(&info, 0, b0.rect.map(|v| v as f32)).center();
+    h.hover_at(start);
+    h.run_steps(2);
+    h.drag_at(start);
+    h.run_steps(2);
+    h.hover_at(start + egui::vec2(0.0, 12.0));
+    h.run_steps(2);
+    assert!(h.state().views[0].block_drag.is_some());
+
+    // Scroll far enough down that page 0 is well over 400 px above the viewport, while page 2 is visible.
+    h.state_mut().views[0].goto = Some((2, 0.25));
+    h.run_steps(4);
+    assert!(h.state().views[0].page_screen_rect(0).is_some_and(|r| r.bottom() < -400.0), "source page scrolled >400px offscreen");
+    let dst = h.state().views[0].page_screen_rect(2).expect("page 2 visible").center() - egui::vec2(0.0, 60.0);
+    h.hover_at(dst);
+    h.run_steps(2);
+    h.drop_at(dst);
+    h.run_steps(4);
+
+    let doc = h.state().session.get(id).unwrap();
+    assert!(doc.text_blocks(0).is_empty(), "Page 1 text left page 0 after offscreen drag");
+    let p2_texts: Vec<_> = doc.text_blocks(2).into_iter().map(|b| b.text).collect();
+    assert!(p2_texts.iter().any(|t| t == "Page 1") && p2_texts.iter().any(|t| t == "Page 3"), "got {p2_texts:?}");
+}
+
+#[test]
+fn dragging_actual_text_and_clipped_cell_after_text_clip_succeeds() {
+    let thai_hex: String = "สวัสดี".encode_utf16().map(|u| format!("{u:04X}")).collect();
+    let stream_body = format!(
+        "q BT /F1 12 Tf 7 Tr 10 10 Td (Wm) Tj ET Q \
+         q 30 160 140 50 re W n 30 160 140 50 re S /Span <</ActualText <FEFF{thai_hex}>>> BDC BT /F1 14 Tf 40 180 Td (ab) Tj ET EMC Q"
+    );
+    let objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 300] >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{stream_body}\nendstream", stream_body.len()),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+    ];
+    let mut pdf = b"%PDF-1.7\n".to_vec();
+    let mut offs = Vec::new();
+    for (i, o) in objs.iter().enumerate() {
+        offs.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n{o}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = pdf.len();
+    pdf.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
+    for o in offs {
+        pdf.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
+
+    let mut h = Harness::builder().with_size(egui::vec2(1200.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("actual_cell.pdf", None, pdf).expect("fixture opens");
+        app.set_option("zoom", "100").unwrap();
+        assert!(app.execute("edit.edit_text"));
+        app
+    });
+    h.run_steps(4);
+
+    let id = h.state().views[0].id;
+    let (xf, info, b0) = {
+        let doc = h.state().session.get(id).unwrap();
+        let r0 = h.state().views[0].page_screen_rect(0).expect("page 0 visible");
+        let b0 = doc.text_blocks(0).into_iter().find(|b| b.text == "สวัสดี").expect("ActualText cell block");
+        (pdfcraft_ui_egui::canvas::PageXform { rect: r0, rot: 0, pw: 200.0, ph: 300.0 }, doc.info.clone(), b0)
+    };
+    let from = xf.user_rect(&info, 0, b0.rect.map(|v| v as f32)).center();
+    let to = from + egui::vec2(20.0, 120.0);
+    drag(&mut h, from, to);
+
+    assert!(h.query_by_label_contains("could not be moved").is_none(), "no move failure notice rendered");
+    let app = h.state();
+    assert_eq!(app.toast, None, "no move failure notice after dragging clipped ActualText cell");
+    let doc = app.session.get(id).unwrap();
+    let after = doc.text_blocks(0);
+    let moved = after.iter().find(|b| b.text == "สวัสดี").expect("moved ActualText cell still present");
+    assert!(moved.rect[1] < b0.rect[1] - 40.0, "moved outside table cell clip: {:?} -> {:?}", b0.rect, moved.rect);
+}
+
+#[test]
+fn selected_image_body_drag_over_overlapping_text_moves_image_not_text() {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1100.0)).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("clipped.pdf", None, clipped_artwork_with_labels_drawn(true)).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.state_mut().views[0].fit = pdfcraft_ui_egui::canvas::Fit::Page;
+    assert!(h.state_mut().execute("view.layout.single"));
+    h.run_steps(3);
+    let page = h.state().views[0].page_screen_rect(0).unwrap();
+    let at = |x: f32, y: f32| egui::pos2(page.left() + x / 200.0 * page.width(), page.top() + (300.0 - y) / 300.0 * page.height());
+
+    let p = at(95.0, 195.0);
+    h.hover_at(p);
+    h.run_steps(1);
+    h.drag_at(p);
+    h.run_steps(1);
+    h.drop_at(p);
+    h.run_steps(3);
+    let id = h.state().views[0].id;
+    assert!(h.state().views[0].image_selection.is_some());
+
+    let (before_vis, overlay_rect, text_before) = {
+        let doc = h.state().session.get(id).unwrap();
+        let vis = doc.page_images(0)[0].visible_rect.unwrap();
+        let ov = doc.text_blocks(0).into_iter().find(|b| b.text == "Overlay").expect("Overlay label").rect;
+        let lines: Vec<_> = doc.text_lines(0).into_iter().map(|l| (l.text, l.rect)).collect();
+        (vis, ov, lines)
+    };
+    let from = at(((overlay_rect[0] + overlay_rect[2]) * 0.5) as f32, ((overlay_rect[1] + overlay_rect[3]) * 0.5) as f32);
+    let to = from + egui::vec2(page.width() * 0.1, -page.height() * 0.1);
+    h.hover_at(from);
+    h.run_steps(1);
+    h.drag_at(from);
+    h.run_steps(1);
+    for k in 1..=5 {
+        h.hover_at(from + (to - from) * (k as f32 / 5.0));
+        h.run_steps(1);
+    }
+    h.drop_at(to);
+    h.run_steps(4);
+
+    assert!(h.state().views[0].line_editor.is_none(), "selected image body owns drag over overlapping text");
+    let doc = h.state().session.get(id).unwrap();
+    let after_vis = doc.page_images(0)[0].visible_rect.unwrap();
+    assert!(after_vis[0] > before_vis[0] + 10.0 && after_vis[1] > before_vis[1] + 10.0, "moved selected image: {before_vis:?} -> {after_vis:?}");
+    let text_after: Vec<_> = doc.text_lines(0).into_iter().map(|l| (l.text, l.rect)).collect();
+    assert_eq!(text_after, text_before, "overlapping text stays untouched");
+}
+
+#[test]
+fn unselected_outer_clipped_image_moves_in_single_drag_gesture() {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1100.0)).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("clipped_outer.pdf", None, clipped_artwork_with_labels_drawn(false)).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.state_mut().views[0].fit = pdfcraft_ui_egui::canvas::Fit::Page;
+    assert!(h.state_mut().execute("view.layout.single"));
+    h.run_steps(3);
+    assert!(h.state().views[0].image_selection.is_none());
+
+    let page = h.state().views[0].page_screen_rect(0).unwrap();
+    let at = |x: f32, y: f32| egui::pos2(page.left() + x / 200.0 * page.width(), page.top() + (300.0 - y) / 300.0 * page.height());
+    let from = at(95.0, 195.0);
+    let to = at(115.0, 175.0);
+    h.hover_at(from);
+    h.run_steps(1);
+    h.drag_at(from);
+    h.run_steps(1);
+    for k in 1..=5 {
+        h.hover_at(from + (to - from) * (k as f32 / 5.0));
+        h.run_steps(1);
+    }
+    h.drop_at(to);
+    h.run_steps(4);
+
+    let id = h.state().views[0].id;
+    assert!(h.state().views[0].image_selection.is_some(), "single drag selects and moves the image");
+    let after_vis = h.state().session.get(id).unwrap().page_images(0)[0].visible_rect.unwrap();
+    for (actual, expected) in after_vis.into_iter().zip([50.0, 150.0, 180.0, 230.0]) {
+        assert!((actual - expected).abs() < 1.5, "moved outer-clipped image in one gesture: {actual} vs {expected} ({after_vis:?})");
+    }
+}
+
+#[test]
+fn add_text_tool_drags_source_paragraph_across_empty_space_smoothly_and_repeatedly() {
+    let _gpu = gpu();
+    let content = "BT /F1 12 Tf 60 120 Td (Stationary alpha) Tj ET BT /F1 12 Tf 60 340 Td (Draggable beta) Tj ET";
+    let saved_base = paragraph_drag_fixture(content, 0, 1);
+    let mut h = paragraph_drag_harness(saved_base, 0);
+    assert!(h.state_mut().execute("edit.text"));
+    h.run_steps(2);
+
+    let before = dragged_paragraphs(&h);
+    assert_eq!(before.len(), 2);
+    let moving_idx = before.iter().position(|b| b.text == "Draggable beta").unwrap();
+
+    // Drag well outside the original box over empty page background and release there.
+    let (from1, to1) = paragraph_drag_points(&h, "Draggable beta", [140.0, -80.0]);
+    h.hover_at(from1);
+    h.run_steps(1);
+    h.drag_at(from1);
+    h.run_steps(1);
+    for k in 1..=5 {
+        h.hover_at(from1 + (to1 - from1) * (k as f32 / 5.0));
+        h.run_steps(1);
+        assert!(h.state().views[0].block_drag.is_some(), "drag stays live after pointer leaves origin box (step {k})");
+    }
+    h.drop_at(to1);
+    h.run_steps(1);
+    assert!(h.state().views[0].block_drag.is_none(), "release over empty space commits immediately instead of sticking");
+    h.run_steps(3);
+    assert!(h.state().views[0].line_editor.is_none(), "a body drag in AddText must not open typing");
+
+    let mut expected1 = before.clone();
+    expected1[moving_idx].rect[0] += 140.0;
+    expected1[moving_idx].rect[2] += 140.0;
+    expected1[moving_idx].rect[1] -= 80.0;
+    expected1[moving_idx].rect[3] -= 80.0;
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &expected1);
+    let id = h.state().views[0].id;
+    assert_eq!(h.state().session.get(id).unwrap().can_undo(), Some("Move object"));
+
+    // Immediately drag back in the opposite direction without waiting for background re-raster.
+    let (from2, to2) = paragraph_drag_points(&h, "Draggable beta", [-90.0, 40.0]);
+    h.hover_at(from2);
+    h.run_steps(1);
+    h.drag_at(from2);
+    h.run_steps(1);
+    for k in 1..=5 {
+        h.hover_at(from2 + (to2 - from2) * (k as f32 / 5.0));
+        h.run_steps(1);
+        assert!(h.state().views[0].block_drag.is_some(), "second drag stays live (step {k})");
+    }
+    h.drop_at(to2);
+    h.run_steps(1);
+    assert!(h.state().views[0].block_drag.is_none());
+    h.run_steps(3);
+
+    let mut expected2 = expected1.clone();
+    expected2[moving_idx].rect[0] -= 90.0;
+    expected2[moving_idx].rect[2] -= 90.0;
+    expected2[moving_idx].rect[1] += 40.0;
+    expected2[moving_idx].rect[3] += 40.0;
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &expected2);
+}
+
+#[test]
+fn add_text_tool_drags_width_handle_and_unchanged_open_editor_frame() {
+    let mut h = harness(1, |_| {});
+    assert!(h.state_mut().execute("edit.text"));
+    h.run_steps(2);
+    let id = h.state().views[0].id;
+    let block = |h: &Harness<'static, PdfCraftApp>| h.state().session.get(id).unwrap().text_blocks(0)[0].clone();
+    let r = h.state().views[0].page_screen_rect(0).expect("on screen");
+    let k = r.width() / 200.0;
+    let screen = |x: f64, y: f64| egui::pos2(r.left() + x as f32 * k, r.top() + (300.0 - y as f32) * k);
+    let near = |a: f64, b: f64| (a - b).abs() < 1.5;
+
+    // 1. Edge/width handle drag still works while QuickTool::AddText is active.
+    let before = block(&h);
+    let edge = screen(before.rect[2], (before.rect[1] + before.rect[3]) / 2.0) + egui::vec2(2.0, 0.0);
+    let narrower = (before.rect[2] - before.rect[0] - 45.0) as f32 * k;
+    drag(&mut h, edge, edge - egui::vec2(narrower, 0.0));
+    assert!(h.state().views[0].block_drag.is_none());
+    assert!(h.state().views[0].line_editor.is_none());
+    {
+        let doc = h.state().session.get(id).unwrap();
+        let lines: Vec<String> = doc.text_lines(0).iter().map(|l| l.text.clone()).collect();
+        assert_eq!(lines, ["Page", "1"], "AddText width handle drag rewraps text");
+    }
+
+    // 2. Open the source paragraph unchanged and move it by its frame in AddText mode.
+    let current = block(&h);
+    click_at(&mut h, screen((current.rect[0] + current.rect[2]) / 2.0, (current.rect[1] + current.rect[3]) / 2.0));
+    assert!(h.state().views[0].line_editor.is_some(), "clicking existing text opens editor in AddText");
+    let frame = screen((current.rect[0] + current.rect[2]) / 2.0, current.rect[3]) - egui::vec2(0.0, 4.0);
+    drag(&mut h, frame, frame + egui::vec2(30.0 * k, -40.0 * k));
+    assert!(h.state().views[0].line_editor.is_none());
+    assert!(h.state().views[0].block_drag.is_none());
+    let moved = block(&h);
+    assert!(near(moved.rect[0], current.rect[0] + 30.0) && near(moved.rect[1], current.rect[1] + 40.0), "{:?} -> {:?}", current.rect, moved.rect);
+}

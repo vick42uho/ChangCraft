@@ -67,10 +67,16 @@ pub fn ui_telugu_fonts() -> Vec<&'static CraftFont> {
 }
 
 /// Thai faces shared by the interface and PDF text writer. Sarabun is prioritized first
-/// as the standard Thai typeface for documents.
+/// as the standard Thai typeface for documents; calligraphic faces such as Charmonman stay last.
 pub fn ui_thai_fonts() -> Vec<&'static CraftFont> {
     let mut fonts: Vec<&CraftFont> = CRAFT_FONTS.iter().filter(|f| f.covers("Thai")).collect();
-    fonts.sort_by_key(|f| f.family != "Sarabun");
+    fonts.sort_by_key(|f| match f.family {
+        "Sarabun" => 0,
+        "IBM Plex Sans Thai" => 1,
+        "Noto Sans Thai" => 2,
+        "Charmonman" | "Charm" => 4,
+        _ => 3,
+    });
     fonts
 }
 

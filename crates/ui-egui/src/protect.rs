@@ -25,6 +25,20 @@ impl Default for ProtectDraft {
     }
 }
 
+impl Drop for ProtectDraft {
+    fn drop(&mut self) {
+        use zeroize::Zeroize as _;
+        self.password.zeroize();
+        self.confirm.zeroize();
+        if let Some(pw) = &mut self.protection.open_password {
+            pw.zeroize();
+        }
+        if let Some(pw) = &mut self.protection.permissions_password {
+            pw.zeroize();
+        }
+    }
+}
+
 impl ProtectDraft {
     /// Why Apply is disabled, if it is.
     pub fn problem(&self) -> Option<&'static str> {

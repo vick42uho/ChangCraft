@@ -131,6 +131,60 @@ pub fn thai_fallback() -> Option<Arc<FontData>> {
     CACHE.get_or_init(|| script_fallback(&thai_candidates(), THAI_PROBE)).clone()
 }
 
+/// An installed named Thai font (e.g. "Angsana New", "Cordia New", "Browallia New") for UI display.
+pub fn system_thai_named_font(family: &str) -> Option<Arc<FontData>> {
+    static ANGSANA: OnceLock<Option<Arc<FontData>>> = OnceLock::new();
+    static CORDIA: OnceLock<Option<Arc<FontData>>> = OnceLock::new();
+    static BROWALLIA: OnceLock<Option<Arc<FontData>>> = OnceLock::new();
+
+    if std::env::var_os("PDFCRAFT_SYSTEM_FONTS").is_some_and(|v| v == "0") {
+        return None;
+    }
+
+    match family {
+        "Angsana New" => ANGSANA
+            .get_or_init(|| {
+                if cfg!(windows) {
+                    let fonts = windows_fonts();
+                    for f in ["angsana.ttc", "angsanau.ttf", "angsau.ttf", "angsana.ttf"] {
+                        if let Some(data) = read(&fonts.join(f), THAI_PROBE, MAX_BYTES) {
+                            return Some(data);
+                        }
+                    }
+                }
+                None
+            })
+            .clone(),
+        "Cordia New" => CORDIA
+            .get_or_init(|| {
+                if cfg!(windows) {
+                    let fonts = windows_fonts();
+                    for f in ["cordia.ttc", "cordiau.ttf", "cordia.ttf"] {
+                        if let Some(data) = read(&fonts.join(f), THAI_PROBE, MAX_BYTES) {
+                            return Some(data);
+                        }
+                    }
+                }
+                None
+            })
+            .clone(),
+        "Browallia New" => BROWALLIA
+            .get_or_init(|| {
+                if cfg!(windows) {
+                    let fonts = windows_fonts();
+                    for f in ["browalia.ttc", "browallia.ttc", "browau.ttf", "browa.ttf"] {
+                        if let Some(data) = read(&fonts.join(f), THAI_PROBE, MAX_BYTES) {
+                            return Some(data);
+                        }
+                    }
+                }
+                None
+            })
+            .clone(),
+        _ => None,
+    }
+}
+
 fn script_fallback(candidates: &[PathBuf], probe: char) -> Option<Arc<FontData>> {
     if std::env::var_os("PDFCRAFT_SYSTEM_FONTS").is_some_and(|v| v == "0") {
         return None;

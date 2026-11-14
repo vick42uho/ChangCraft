@@ -164,12 +164,15 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens, kind: M
             ui.horizontal(|ui| {
                 // The standard faces a header can be drawn in (#3754).
                 ui.label(tl!("Font:"));
-                egui::ComboBox::from_id_salt("hf-font").selected_text(d.hf.font.label()).width(140.0).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("hf-font").selected_text(d.hf.font.label()).width(180.0).show_ui(ui, |ui| {
                     for f in [
                         FontFamily::Helvetica,
                         FontFamily::Times,
                         FontFamily::Courier,
                         FontFamily::Sarabun,
+                        FontFamily::AngsanaNew,
+                        FontFamily::CordiaNew,
+                        FontFamily::BrowalliaNew,
                         FontFamily::NotoSansThai,
                         FontFamily::IBMPlexSansThai,
                     ] {
@@ -234,6 +237,11 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens, kind: M
                 if ui.button(tl!("Insert Date")).clicked() {
                     d.hf.text[d.focused_box].push_str(DATE_FORMATS[d.date_format]);
                 }
+                ui.add_space(8.0);
+                let bates_label = if crate::i18n::current().code() == "th" { "แทรกเลข Bates" } else { "Insert Bates Number" };
+                if ui.button(bates_label).clicked() {
+                    d.hf.text[d.focused_box].push_str("<<Bates Number#6#1##>>");
+                }
                 ui.add_space(12.0);
                 ui.label(tl!("Start page number"));
                 ui.add(egui::DragValue::new(&mut d.hf.start_number).range(1..=999_999));
@@ -259,12 +267,15 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens, kind: M
                     });
                     ui.horizontal(|ui| {
                         ui.label(tl!("Font:"));
-                        egui::ComboBox::from_id_salt("wm-font").selected_text(d.wm.font.label()).width(140.0).show_ui(ui, |ui| {
+                        egui::ComboBox::from_id_salt("wm-font").selected_text(d.wm.font.label()).width(180.0).show_ui(ui, |ui| {
                             for f in [
                                 FontFamily::Helvetica,
                                 FontFamily::Times,
                                 FontFamily::Courier,
                                 FontFamily::Sarabun,
+                                FontFamily::AngsanaNew,
+                                FontFamily::CordiaNew,
+                                FontFamily::BrowalliaNew,
                                 FontFamily::NotoSansThai,
                                 FontFamily::IBMPlexSansThai,
                             ] {

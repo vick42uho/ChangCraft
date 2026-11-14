@@ -607,7 +607,7 @@ pub(crate) struct PageCx<'a> {
 }
 
 impl PageCx<'_> {
-    fn to_user(&self, p: Pos2) -> [f64; 2] {
+    pub(crate) fn to_user(&self, p: Pos2) -> [f64; 2] {
         let (vx, vy) = self.xf.screen_to_view(p);
         let u = self.info.pages[self.page].view_to_user(vx, vy);
         [u[0] as f64, u[1] as f64]
@@ -934,7 +934,9 @@ pub(crate) fn page_input(ui: &egui::Ui, resp: &egui::Response, cx: &PageCx<'_>, 
                             return true;
                         }
                         if !repeat {
-                            let u = if ui.input(|i| i.modifiers.shift) && let Some(last) = points.last() {
+                            let u = if ui.input(|i| i.modifiers.shift)
+                                && let Some(last) = points.last()
+                            {
                                 pdfcraft_engine::measure::snap::ortho(*last, u)
                             } else {
                                 u
@@ -1927,15 +1929,11 @@ pub(crate) fn context_menu(ui: &mut egui::Ui, view: &mut DocView, info: &DocInfo
             }
         }
         None => {
-            if let Some((page, at)) = view.comments.context_at {
-                if ui.button(tl!("Paste")).clicked() {
-                    action = Some(CanvasAction::PasteAnnotation(page));
-                    ui.close();
-                }
-                if ui.add_enabled(allowed, egui::Button::new(tl!("Add a sticky note here"))).clicked() {
-                    view.comments.composer = Some(Composer { page, at, kind: ComposerKind::Note, text: String::new(), focus: true });
-                    ui.close();
-                }
+            if let Some((page, at)) = view.comments.context_at
+                && ui.add_enabled(allowed, egui::Button::new(tl!("Add a sticky note here"))).clicked()
+            {
+                view.comments.composer = Some(Composer { page, at, kind: ComposerKind::Note, text: String::new(), focus: true });
+                ui.close();
             }
             if ui.button(tl!("Comments panel")).clicked() {
                 action = Some(CanvasAction::OpenComments);

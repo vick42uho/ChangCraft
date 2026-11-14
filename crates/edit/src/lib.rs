@@ -270,10 +270,8 @@ fn rgb(c: Rgb) -> String {
 
 const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-const THAI_MONTHS: [&str; 12] = [
-    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
-];
+const THAI_MONTHS: [&str; 12] =
+    ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 
 fn to_thai_digits(n: u64) -> String {
     n.to_string()
@@ -636,7 +634,7 @@ fn place(doc: &mut Document, page: &pdfcraft_model::Page, kind: MarkKind, conten
 /// content appended after an earlier PdfCraft wrapper by another tool (#3084): the stretch of
 /// content that leaves state set is wrapped in q/Q, once. Any known unfinished marked-content
 /// sequences are closed at the end too, so hidden optional content cannot hide the new mark.
-fn place_tagged(doc: &mut Document, page: &pdfcraft_model::Page, tag: &str, content: Vec<u8>, behind: bool) -> Result<(), EditError> {
+pub(crate) fn place_tagged(doc: &mut Document, page: &pdfcraft_model::Page, tag: &str, content: Vec<u8>, behind: bool) -> Result<(), EditError> {
     let mut list = contents(doc, page)?;
     // The behind-marks at the start: backgrounds in the order added, then watermarks.
     let behind_kinds = [MarkKind::Background.tag(), MarkKind::Watermark.tag()];
@@ -727,14 +725,7 @@ fn first_undrawable_mark(line: &str) -> Option<char> {
     })
 }
 
-fn draw_thai_contours(
-    text: &str,
-    script: pdfcraft_fonts::ShapedScript,
-    size: f64,
-    x: f64,
-    y: f64,
-    color: [f64; 3],
-) -> (String, f64) {
+fn draw_thai_contours(text: &str, script: pdfcraft_fonts::ShapedScript, size: f64, x: f64, y: f64, color: [f64; 3]) -> (String, f64) {
     let norm = pdfcraft_fonts::normalize_thai_pua(text);
     let Ok(clusters) = pdfcraft_fonts::shape_script(&norm, false, script) else {
         return (String::new(), 0.0);
@@ -961,19 +952,8 @@ pub fn add_watermark(doc: &mut Document, pages: &[usize], wm: &Watermark, replac
         let (s, c) = wm.rotation.to_radians().sin_cos();
         let (cx, cy) = (w / 2.0 + wm.offset[0], h / 2.0 + wm.offset[1]);
         let mut content = begin(MarkKind::Watermark, "Watermark", page.view_matrix(doc)).into_bytes();
-        content.extend(
-            format!(
-                "/PCGS{} gs\n{} {} {} {} {} {} cm\n",
-                (opacity * 100.0).round() as i64,
-                n(c),
-                n(s),
-                n(-s),
-                n(c),
-                n(cx),
-                n(cy),
-            )
-            .bytes(),
-        );
+        content
+            .extend(format!("/PCGS{} gs\n{} {} {} {} {} {} cm\n", (opacity * 100.0).round() as i64, n(c), n(s), n(-s), n(c), n(cx), n(cy),).bytes());
         let line_h = size * 1.15;
         let total = line_h * (lines.len() as f64 - 1.0);
         let has_thai = lines.iter().any(|l| l.chars().any(is_thai_mark));
@@ -1100,9 +1080,13 @@ pub fn marks_present(doc: &Document) -> Vec<MarkKind> {
 }
 
 mod background;
-pub use background::page_background;
+pub use background::{page_background, page_highlights_and_lines};
 pub mod objects;
-pub use objects::{EditableObject, MAX_MOVE_OBJECTS, ObjectKind, ObjectTarget, editable_objects, move_objects};
+pub(crate) mod ungroup;
+pub use objects::{
+    CopiedObjects, EditableObject, MAX_MOVE_OBJECTS, ObjectKind, ObjectTarget, copy_objects, editable_objects, editable_objects_with_lines,
+    move_objects, move_objects_with_inventory, paste_objects,
+};
 
 mod flatten;
 pub use flatten::{flatten, flatten_fill_sign};
@@ -1114,7 +1098,8 @@ mod linebreak;
 pub mod text;
 pub use text::{
     BlockKey, BlockStyle, LineEdit, MAX_FORM_DEPTH, MAX_FORM_VISITS, RangeStyle, ReadingBlocks, TextBlock, TextLine, TextSession, block_overlapping,
-    clear_block, reading_blocks, reading_blocks_checked, replace_block, replace_line, rewrite_block, text_blocks, text_lines,
+    clear_block, clear_block_with_lines, reading_blocks, reading_blocks_checked, replace_block, replace_line, rewrite_block, text_blocks,
+    text_blocks_from_doc_with_lines, text_blocks_from_lines, text_lines,
 };
 pub mod added;
 pub use added::{

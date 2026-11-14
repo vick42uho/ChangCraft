@@ -1136,7 +1136,7 @@
 	Custom text:	ข้อความกำหนดเอง:
 	Redaction code:	รหัสการปิดทับ:
 	Font:	แบบอักษร:
-	Font size:	ขนาดแบบอักษร:
+	Font size:	ขนาด:
 	Auto-size text to fit redaction region	ปรับขนาดข้อความอัตโนมัติให้พอดีกับพื้นที่ปิดทับ
 	Font colour:	สีแบบอักษร:
 	Repeat overlay text	ทำซ้ำข้อความซ้อนทับ
@@ -1973,6 +1973,15 @@
 	Fill & Sign: change initials	กรอกและเซ็น: เปลี่ยนชื่อย่อ
 	Fill & Sign: remove saved signature	กรอกและเซ็น: เอาลายเซ็นที่บันทึกไว้ออก
 	Fill & Sign: remove saved initials	กรอกและเซ็น: เอาชื่อย่อที่บันทึกไว้ออก
+	Fill & Sign: signature 3	กรอกและเซ็น: ลายเซ็น 3
+	Fill & Sign: change signature 3	กรอกและเซ็น: เปลี่ยนลายเซ็น 3
+	Fill & Sign: remove signature 3	กรอกและเซ็น: เอาลายเซ็น 3 ออก
+	Fill & Sign: signature 4	กรอกและเซ็น: ลายเซ็น 4
+	Fill & Sign: change signature 4	กรอกและเซ็น: เปลี่ยนลายเซ็น 4
+	Fill & Sign: remove signature 4	กรอกและเซ็น: เอาลายเซ็น 4 ออก
+	Fill & Sign: signature 5	กรอกและเซ็น: ลายเซ็น 5
+	Fill & Sign: change signature 5	กรอกและเซ็น: เปลี่ยนลายเซ็น 5
+	Fill & Sign: remove signature 5	กรอกและเซ็น: เอาลายเซ็น 5 ออก
 	Change signature	เปลี่ยนลายเซ็น
 	Change initials	เปลี่ยนชื่อย่อ
 	Measure distance	วัดระยะทาง

@@ -230,7 +230,10 @@ impl crate::Document {
                     .collect();
                 // The page colour (Edit a PDF ▸ Background, a producer's page fill) for formats that keep one.
                 let background = pdfcraft_edit::page_background(cos, i).ok().flatten();
-                pdfcraft_export::Page { width: info.width as f64, height: info.height as f64, blocks, images, background }
+                let (raw_highlights, raw_lines) = pdfcraft_edit::page_highlights_and_lines(cos, i).unwrap_or_default();
+                let highlights: Vec<([f64; 4], [f64; 3])> = raw_highlights.into_iter().map(|(r, c)| (visible_rect(r), c)).collect();
+                let lines: Vec<[f64; 4]> = raw_lines.into_iter().map(visible_rect).collect();
+                pdfcraft_export::Page { width: info.width as f64, height: info.height as f64, blocks, images, background, highlights, lines }
             })
             .collect();
         (pages, truncated)

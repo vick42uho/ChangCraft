@@ -19,7 +19,12 @@ impl TextSession {
     /// Opens paragraph `block` on `page` (both 0-based) of `doc`.
     pub fn open(doc: &Document, page: usize, block: usize) -> Result<Self, EditError> {
         let lines = text_lines(doc, page)?;
-        let source = group_blocks(&lines)
+        Self::open_with_lines(doc, page, block, lines)
+    }
+
+    /// Opens paragraph `block` on `page` using already-extracted `lines` for that page.
+    pub fn open_with_lines(doc: &Document, page: usize, block: usize, lines: Vec<TextLine>) -> Result<Self, EditError> {
+        let source = group_page_blocks(doc, page, &lines)
             .get(block)
             .cloned()
             .ok_or_else(|| EditError::Invalid(format!("page {} has no paragraph {}", page + 1, block + 1)))?;

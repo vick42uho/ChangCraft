@@ -11,9 +11,7 @@
 use std::collections::{HashMap, HashSet};
 
 use pdfcraft_cos::{Dict, Document, ObjRef, Object, PdfString, Stream};
-use pdfcraft_fonts::{
-    GlyphError, GlyphOutline, ShapedCluster, ShapedScript, Std14, literal, shape_arabic, shape_hebrew, shaped_glyph, win_ansi,
-};
+use pdfcraft_fonts::{GlyphError, GlyphOutline, ShapedCluster, ShapedScript, Std14, literal, shape_arabic, shape_hebrew, shaped_glyph, win_ansi};
 use unicode_bidi::{Level, ParagraphBidiInfo};
 
 use crate::{EditError, MarkKind, check, contents, matrix_number, n, page_list, place_tagged};
@@ -140,10 +138,26 @@ impl Family {
     /// The standard-14 face this family means at the given style.
     pub fn std14(self, bold: bool, italic: bool) -> Std14 {
         match (self, bold, italic) {
-            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew, false, false) => Std14::Helvetica,
-            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew, true, false) => Std14::HelveticaBold,
-            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew, false, true) => Std14::HelveticaOblique,
-            (Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew, true, true) => Std14::HelveticaBoldOblique,
+            (
+                Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew,
+                false,
+                false,
+            ) => Std14::Helvetica,
+            (
+                Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew,
+                true,
+                false,
+            ) => Std14::HelveticaBold,
+            (
+                Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew,
+                false,
+                true,
+            ) => Std14::HelveticaOblique,
+            (
+                Family::Sarabun | Family::NotoSansThai | Family::IBMPlexSansThai | Family::AngsanaNew | Family::CordiaNew | Family::BrowalliaNew,
+                true,
+                true,
+            ) => Std14::HelveticaBoldOblique,
             (Family::Courier, false, false) => Std14::Courier,
             (Family::Courier, true, false) => Std14::CourierBold,
             (Family::Courier, false, true) => Std14::CourierOblique,
@@ -616,7 +630,9 @@ fn shaped_layout(t: &AddedText, line: &str, rtl: bool) -> Result<(Vec<Piece>, f6
                     ShapedScript::ThaiIBMPlex => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiIBMPlex).map_err(|e| thai_error(e, &s))?,
                     ShapedScript::ThaiAngsana => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiAngsana).map_err(|e| thai_error(e, &s))?,
                     ShapedScript::ThaiCordia => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiCordia).map_err(|e| thai_error(e, &s))?,
-                    ShapedScript::ThaiBrowallia => pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiBrowallia).map_err(|e| thai_error(e, &s))?,
+                    ShapedScript::ThaiBrowallia => {
+                        pdfcraft_fonts::shape_script(&s, false, ShapedScript::ThaiBrowallia).map_err(|e| thai_error(e, &s))?
+                    }
                 };
                 Piece::Shaped(shaped)
             } else if run_rtl {

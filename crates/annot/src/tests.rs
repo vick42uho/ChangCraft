@@ -40,7 +40,7 @@ fn new(page: usize, shape: Shape) -> NewAnnotation {
     NewAnnotation {
         page,
         shape,
-        style: Style { color: [0.0, 0.4, 1.0], opacity: 1.0, width: 2.0, fill: None },
+        style: Style { color: [0.0, 0.4, 1.0], opacity: 1.0, width: 2.0, fill: None, font: None },
         contents: "hello".into(),
         author: "Ada".into(),
     }
@@ -801,8 +801,8 @@ fn cloud_ys(path: &str) -> Vec<f64> {
 fn replace_text_groups_a_strikeout_and_a_caret() {
     let mut doc = fixture();
     let quads = [[100.0, 720.0, 200.0, 720.0, 100.0, 706.0, 200.0, 706.0]];
-    let red = Style { color: [0.89, 0.13, 0.13], opacity: 1.0, width: 1.0, fill: None };
-    let blue = Style { color: [0.0, 0.47, 0.84], opacity: 1.0, width: 1.0, fill: None };
+    let red = Style { color: [0.89, 0.13, 0.13], opacity: 1.0, width: 1.0, fill: None, font: None };
+    let blue = Style { color: [0.0, 0.47, 0.84], opacity: 1.0, width: 1.0, fill: None, font: None };
     let i = add_text_replacement(&mut doc, 0, &quads, "new words", "Ada", &red, &blue, &meta("r"), &meta("r-caret")).unwrap();
     let doc = reopen(&doc);
     let a = list(&doc, 0);
@@ -1379,6 +1379,20 @@ fn text_box_font_size_changes_the_da_and_grows_the_box() {
         assert!(set_font_size(&mut doc, 0, i, 12.0, &meta("")).is_err());
         assert_eq!(props(&doc, 0, i).unwrap().font_size, None);
     }
+}
+
+#[test]
+fn text_boxes_can_change_font_family() {
+    let mut doc = fixture();
+    let mut a = new(0, Shape::Typewriter { rect: [100.0, 700.0, 300.0, 750.0], font_size: 14.0 });
+    a.contents = "สวัสดีภาษาไทย".into();
+    a.style.font = Some("Sarabun".into());
+    let t = add_annotation(&mut doc, &a, &meta("")).unwrap();
+    assert_eq!(props(&doc, 0, t).unwrap().font_family.as_deref(), Some("Sarabun"));
+    set_font_family(&mut doc, 0, t, "IBM Plex Sans Thai", &meta("")).unwrap();
+    assert_eq!(props(&doc, 0, t).unwrap().font_family.as_deref(), Some("IBM Plex Sans Thai"));
+    set_font_family(&mut doc, 0, t, "Angsana New", &meta("")).unwrap();
+    assert_eq!(props(&doc, 0, t).unwrap().font_family.as_deref(), Some("Angsana New"));
 }
 
 #[test]

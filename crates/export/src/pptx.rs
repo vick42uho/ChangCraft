@@ -126,7 +126,7 @@ pub fn pptx(pages: &[Page], title: &str) -> Vec<u8> {
     let mut slides: Vec<(String, String)> = Vec::new(); // (slide_xml, slide_rels)
 
     for p in pages {
-        let (tables, consumed) = crate::tables(&p.blocks);
+        let (tables, consumed) = crate::tables(&p.blocks, &p.highlights, &p.lines);
         let title_idx = p
             .blocks
             .iter()
@@ -397,6 +397,7 @@ mod tests {
                 rotation: 0.0,
             }],
             background: None,
+            ..Page::default()
         }
     }
 
@@ -524,6 +525,7 @@ mod tests {
             ],
             images: Vec::new(),
             background: None,
+            ..Page::default()
         };
         let bytes = pptx(&[sample_page(), table_page], "Two");
         let parts = entries(&bytes);
@@ -621,7 +623,7 @@ mod tests {
         let images = (0..40)
             .map(|k| Image { ext: "png", bytes: vec![0; 4], rect: [0.0, -1e300, 1e-300, 1e300 - k as f64], size: [1.0, 1.0], rotation: 0.0 })
             .collect();
-        let p = Page { width: f64::MAX, height: f64::NAN, blocks, images, background: None };
+        let p = Page { width: f64::MAX, height: f64::NAN, blocks, images, background: None, ..Page::default() };
         let bytes = pptx(&[p], "Hostile");
         let slide = part(&bytes, "ppt/slides/slide1.xml");
         assert!(slide.contains("Title") && slide.contains("<p:pic>"), "the slide is still written");
@@ -701,6 +703,7 @@ mod tests {
             ],
             images: Vec::new(),
             background: None,
+            ..Page::default()
         };
         let bytes = pptx(&[p], "Table Check");
         let slide_xml = part(&bytes, "ppt/slides/slide1.xml");

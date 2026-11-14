@@ -280,7 +280,26 @@ fn is_font_file(path: &std::path::Path) -> bool {
 /// cheap prefilter only; the family identity is decided later from the font's own names.
 fn installed_name_matches(stem: &str, wanted: &str) -> bool {
     let stem_key = family_key(stem);
-    !stem_key.is_empty() && (stem_key.contains(wanted) || (stem_key.chars().count() >= 3 && wanted.contains(&stem_key)))
+    if !stem_key.is_empty() && (stem_key.contains(wanted) || (stem_key.chars().count() >= 3 && wanted.contains(&stem_key))) {
+        return true;
+    }
+    // Windows Thai UPC fonts use 4-5 letter stems: upcdl/upcdb (DilleniaUPC), upcel/upceb (EucrosiaUPC),
+    // upcfl/upcfb (FreesiaUPC), upcil/upcib (IrisUPC), upcjl/upcjb (JasmineUPC),
+    // upckl/upckb (KodchiangUPC), upcll/upclb (LilyUPC).
+    let lower_stem = stem.to_ascii_lowercase();
+    if lower_stem.starts_with("upc") {
+        return match lower_stem.chars().nth(3) {
+            Some('d') => wanted.contains("dillenia"),
+            Some('e') => wanted.contains("eucrosia"),
+            Some('f') => wanted.contains("freesia"),
+            Some('i') => wanted.contains("iris"),
+            Some('j') => wanted.contains("jasmine"),
+            Some('k') => wanted.contains("kodchiang"),
+            Some('l') => wanted.contains("lily"),
+            _ => wanted.contains("upc"),
+        };
+    }
+    false
 }
 
 /// A complete font program found on this computer, with its PostScript name.

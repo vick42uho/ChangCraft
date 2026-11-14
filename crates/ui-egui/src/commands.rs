@@ -87,8 +87,17 @@ impl PdfCraftApp {
         }
         commands::is_enabled(spec, &self.session, self.active_ids().map(|(_, id)| id))
             && (spec.id != "edit.copy"
-                || self.active.and_then(|i| self.views.get(i)).is_some_and(|v| !v.organize && (v.comments.selected.is_some() || v.selected_text().is_some_and(|t| !t.is_empty()))))
-            && (spec.id != "edit.paste" || self.annot_clipboard.is_some())
+                || self.active.and_then(|i| self.views.get(i)).is_some_and(|v| {
+                    !v.organize
+                        && (v.comments.selected.is_some()
+                            || v.selected_text().is_some_and(|t| !t.is_empty())
+                            || v.line_editor.as_ref().is_some_and(|e| !e.text.is_empty())
+                            || v.objects.count() > 0
+                            || v.image_selection.is_some()
+                            || v.content.selected.is_some()
+                            || v.comments.context_at.is_some())
+                }))
+            && (spec.id != "edit.paste" || self.object_clipboard.is_some() || self.annot_clipboard.is_some() || true)
             && (spec.needs != commands::Needs::TwoPageView || self.active.and_then(|i| self.views.get(i)).is_some_and(crate::DocView::cover_applies))
             && match spec.id {
                 "view.previous_view" => self.active.and_then(|i| self.views.get(i)).is_some_and(|v| !v.back.is_empty()),
@@ -381,6 +390,9 @@ impl PdfCraftApp {
             | "edit.background.update" => {
                 use pdfcraft_engine::MarkKind as K;
                 let kind = if id.starts_with("edit.header_footer") {
+                    if id == "edit.header_footer" && self.marks_draft.hf.text[5] == "<<Bates Number#6#1##>>" {
+                        self.marks_draft.hf.text[5].clear();
+                    }
                     K::HeaderFooter
                 } else if id.starts_with("edit.watermark") {
                     K::Watermark
@@ -554,6 +566,74 @@ impl PdfCraftApp {
                         self.copy_annotation(page, annot_idx);
                         return true;
                     }
+                    if let Some((doc_id, ed_page, ed_block, ed_rect, text, whole_unedited)) = self.views.get(i).and_then(|v| {
+                        let ed = v.line_editor.as_ref()?;
+                        let (text, has_sub_selection) = if let Some(r) = &ed.selection
+                            && let Some(sub) = ed.text.get(r.clone())
+                            && !sub.is_empty()
+                        {
+                            (sub.to_string(), sub.len() < ed.text.len())
+                        } else {
+                            (ed.text.clone(), false)
+                        };
+                        let whole_unedited = !has_sub_selection && !ed.has_changes();
+                        Some((v.id, ed.page, ed.block, ed.source_rect.map(|x| x as f64), text, whole_unedited))
+                    }) {
+                        if let Some(ctx) = &self.ctx {
+                            ctx.copy_text(text.clone());
+                        }
+                        self.object_clip_mark = Some(text.clone());
+                        if whole_unedited
+                            && let Some(doc) = self.session.get(doc_id)
+                            && let Ok(clip) = doc
+                                .copy_objects(ed_page, &[pdfcraft_engine::ObjectTarget { kind: pdfcraft_engine::ObjectKind::Text, index: ed_block }])
+                        {
+                            self.object_clipboard = Some(pdfcraft_engine::ObjectClipboard::new(clip));
+                        } else {
+                            self.object_clipboard = None;
+                        }
+                        self.annot_clipboard = Some(pdfcraft_engine::NewAnnotation {
+                            page: ed_page,
+                            shape: pdfcraft_engine::Shape::TextBox { rect: ed_rect, font_size: 12.0 },
+                            style: pdfcraft_engine::Style {
+                                color: [0.0, 0.0, 0.0],
+                                width: 1.0,
+                                opacity: 1.0,
+                                fill: None,
+                                font: crate::thai_default_font(&text),
+                            },
+                            contents: text,
+                            author: self.comment_prefs.author.clone(),
+                        });
+                        return true;
+                    }
+                    if let Some(ctx) = self.ctx.clone()
+                        && self.copy_objects(i, &ctx, false)
+                    {
+                        return true;
+                    }
+                    if let Some(v) = self.views.get(i)
+                        && let Some(doc) = self.session.get(v.id)
+                        && let Some((combined, rect)) = v.objects.selected_text(doc)
+                    {
+                        if let Some(ctx) = &self.ctx {
+                            ctx.copy_text(combined.clone());
+                        }
+                        self.annot_clipboard = Some(pdfcraft_engine::NewAnnotation {
+                            page: v.current,
+                            shape: pdfcraft_engine::Shape::TextBox { rect, font_size: 12.0 },
+                            style: pdfcraft_engine::Style {
+                                color: [0.0, 0.0, 0.0],
+                                width: 1.0,
+                                opacity: 1.0,
+                                fill: None,
+                                font: crate::thai_default_font(&combined),
+                            },
+                            contents: combined,
+                            author: self.comment_prefs.author.clone(),
+                        });
+                        return true;
+                    }
                     if let Some(ctx) = self.ctx.clone() {
                         return self.copy_selected_text(i, &ctx);
                     }
@@ -562,6 +642,46 @@ impl PdfCraftApp {
             }
             "edit.paste" => {
                 if let Some(i) = active {
+                    if matches!(self.quick_tool, crate::QuickTool::EditText | crate::QuickTool::AddText) {
+                        if let Some(v) = self.views.get_mut(i) {
+                            v.line_editor = None;
+                        }
+                        if self.object_clipboard.is_some() && self.paste_objects(i) {
+                            return true;
+                        }
+                        // Fallback in Edit/AddText mode: paste as AddedText (movable & resizable page text)
+                        // instead of an immovable comment annotation.
+                        if let Some(clip) = self.annot_clipboard.clone()
+                            && !clip.contents.trim().is_empty()
+                        {
+                            let target_page = self.views[i].current;
+                            let id = self.views[i].id;
+                            let (pw, ph) = self
+                                .session
+                                .get(id)
+                                .and_then(|d| d.info.pages.get(target_page))
+                                .map(|p| (p.width as f64, p.height as f64))
+                                .unwrap_or((612.0, 792.0));
+                            let before_count = self.session.get(id).map(|d| d.added().iter().filter(|a| a.page == target_page).count()).unwrap_or(0);
+                            let mut style = self.text_style.clone();
+                            if style.family == pdfcraft_engine::FontFamily::Helvetica
+                                && clip.contents.chars().any(|c| matches!(u32::from(c), 0x0E00..=0x0E7F))
+                            {
+                                style.family = pdfcraft_engine::FontFamily::Sarabun;
+                            }
+                            let step = 18.0 * ((before_count % 10) as f64 + 1.0);
+                            let x0 = (pw * 0.2 + step).min((pw - 180.0).max(36.0));
+                            let y1 = (ph * 0.75 - step).clamp(72.0, (ph - 36.0).max(72.0));
+                            let rect = [x0, (y1 - 24.0).max(18.0), (x0 + 220.0).min(pw - 18.0), y1];
+                            let added_text = pdfcraft_engine::AddedText { text: clip.contents.trim_end().to_string(), rect, ..style };
+                            if self.apply_edit(Edit::AddText { page: target_page, text: added_text }) {
+                                if let Some(v) = self.views.get_mut(i) {
+                                    v.content.select_added = Some((target_page, before_count));
+                                }
+                                return true;
+                            }
+                        }
+                    }
                     let target_page = self.views[i].current;
                     self.paste_annotation(target_page);
                     return true;
@@ -635,8 +755,11 @@ impl PdfCraftApp {
             "sign.fill.extra.0.remove" => self.extra_signatures[0] = None,
             "sign.fill.extra.1.remove" => self.extra_signatures[1] = None,
             "sign.fill.extra.2.remove" => self.extra_signatures[2] = None,
-            "sign.fill.signature.change" | "sign.fill.initials.change"
-            | "sign.fill.extra.0.change" | "sign.fill.extra.1.change" | "sign.fill.extra.2.change" => {
+            "sign.fill.signature.change"
+            | "sign.fill.initials.change"
+            | "sign.fill.extra.0.change"
+            | "sign.fill.extra.1.change"
+            | "sign.fill.extra.2.change" => {
                 let slot = match id {
                     "sign.fill.initials.change" => 1,
                     "sign.fill.extra.0.change" => 2,
@@ -863,7 +986,12 @@ pub(crate) fn registry_menu(app: &mut PdfCraftApp, ui: &mut egui::Ui, menu: &str
             }
             continue;
         }
-        let shortcut = spec.shortcut.or((spec.id == "edit.copy").then_some(COPY)).or((spec.id == "edit.paste").then_some(PASTE)).map(|s| shortcut_label(ui.ctx(), s)).unwrap_or_default();
+        let shortcut = spec
+            .shortcut
+            .or((spec.id == "edit.copy").then_some(COPY))
+            .or((spec.id == "edit.paste").then_some(PASTE))
+            .map(|s| shortcut_label(ui.ctx(), s))
+            .unwrap_or_default();
         let enabled = app.command_enabled(spec);
         let resp = ui.add_enabled(enabled, egui::Button::new(label).shortcut_text(shortcut));
         if resp.clicked() {

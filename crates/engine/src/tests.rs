@@ -1619,7 +1619,7 @@ fn rect_comment(page: usize, rect: [f64; 4]) -> Edit {
     Edit::AddAnnotation(NewAnnotation {
         page,
         shape: Shape::Rectangle { rect },
-        style: Style { color: [1.0, 0.0, 0.0], opacity: 1.0, width: 2.0, fill: Some([1.0, 0.0, 0.0]) },
+        style: Style { color: [1.0, 0.0, 0.0], opacity: 1.0, width: 2.0, fill: Some([1.0, 0.0, 0.0]), ..Style::default() },
         contents: "Look here".into(),
         author: "Reviewer".into(),
     })
@@ -7099,4 +7099,35 @@ fn exporting_office_keeps_dotted_leader_entries_as_paragraphs() {
     let entries = ["Art.1. Scope .................... 3", "Art.2. Eligibility .................... 7", "Art.3. Application .................... 12"];
     let positions: Vec<_> = entries.iter().map(|entry| html.find(&format!("<p>{entry}</p>")).expect("one paragraph per entry")).collect();
     assert!(positions.windows(2).all(|pair| pair[0] < pair[1]), "reading order: {html}");
+}
+
+#[test]
+fn editor_caches_do_not_thrash_across_pages_and_move_objects_updates_cache() {
+    let (mut s, id) = session_with(2);
+
+    let doc = s.get(id).unwrap();
+    let ed = doc.editor.as_ref().unwrap();
+    let l0_first = ed.text_lines(0).unwrap();
+    let b0_first = ed.text_blocks(0).unwrap();
+    let o0_first = ed.editable_objects(0).unwrap();
+
+    // Querying page 1 must not evict page 0 from any of the per-page caches.
+    let _l1 = ed.text_lines(1).unwrap();
+    let _b1 = ed.text_blocks(1).unwrap();
+    let _o1 = ed.editable_objects(1).unwrap();
+
+    assert!(Arc::ptr_eq(&l0_first, &ed.text_lines(0).unwrap()));
+    assert!(Arc::ptr_eq(&b0_first, &ed.text_blocks(0).unwrap()));
+    assert!(Arc::ptr_eq(&o0_first, &ed.editable_objects(0).unwrap()));
+
+    let first = doc.editable_objects(0).unwrap().into_iter().next().expect("page 0 object");
+    let target = first.target;
+    let before_rect = first.rect;
+    s.apply(id, Edit::MoveObjects { page: 0, objects: vec![target], offset: [24.0, -12.0] }).unwrap();
+
+    let moved_doc = s.get(id).unwrap();
+    let moved_ed = moved_doc.editor.as_ref().unwrap();
+    let pre_cached = moved_ed.editable_objects.get(&moved_ed.cos, 0).expect("MoveObjects should populate cache");
+    assert_eq!(pre_cached.len(), o0_first.len());
+    assert!((pre_cached[0].rect[0] - (before_rect[0] + 24.0)).abs() < 0.05);
 }

@@ -8,6 +8,9 @@ use pdfcraft_cos::{Dict, Document, Object};
 
 use crate::{Content, EditError};
 
+pub(crate) mod clip;
+pub use clip::{CopiedObjects, copy_objects, paste_objects};
+
 pub const MAX_MOVE_OBJECTS: usize = 1_000;
 const MAX_PAGE_OBJECTS: usize = 10_000;
 const MAX_COORDINATE: f64 = 1e9;
@@ -52,6 +55,11 @@ fn valid_rect(rect: [f64; 4]) -> bool {
 }
 
 pub fn editable_objects(doc: &Document, page: usize) -> Result<Vec<EditableObject>, EditError> {
+    editable_objects_with_lines(doc, page, None)
+}
+
+/// Like [`editable_objects`], reusing already-extracted `lines` for `page` when provided.
+pub fn editable_objects_with_lines(doc: &Document, page: usize, lines: Option<&[crate::text::TextLine]>) -> Result<Vec<EditableObject>, EditError> {
     checked_streams(doc, page)?;
     let added: Vec<_> = crate::list_added(doc).into_iter().filter(|a| a.page == page).collect();
     if added.len() > MAX_PAGE_OBJECTS {
@@ -72,7 +80,7 @@ pub fn editable_objects(doc: &Document, page: usize) -> Result<Vec<EditableObjec
             text,
         });
     }
-    for (index, b) in crate::text::selectable_blocks(doc, page, &excluded)? {
+    for (index, b) in crate::text::selectable_blocks_with_lines(doc, page, &excluded, lines)? {
         objects.push(EditableObject {
             target: ObjectTarget { kind: ObjectKind::Text, index },
             rect: b.rect,
@@ -101,13 +109,34 @@ pub fn editable_objects(doc: &Document, page: usize) -> Result<Vec<EditableObjec
 /// Move selected mixed objects by a user-space vector as one atomic operation. All targets
 /// refer to the original inventories. A refusal leaves the graph, including overlay, untouched.
 pub fn move_objects(doc: &mut Document, page: usize, targets: &[ObjectTarget], offset: [f64; 2]) -> Result<(), EditError> {
+    move_objects_with_inventory(doc, page, targets, offset, None).map(|_| ())
+}
+
+/// Like [`move_objects`], reusing pre-extracted `lines` when provided and returning the validated
+/// post-move object inventory for `page`.
+pub fn move_objects_with_inventory(
+    doc: &mut Document,
+    page: usize,
+    targets: &[ObjectTarget],
+    offset: [f64; 2],
+    lines: Option<&[crate::text::TextLine]>,
+) -> Result<Vec<EditableObject>, EditError> {
     if targets.is_empty() || targets.len() > MAX_MOVE_OBJECTS {
         return Err(EditError::Invalid("select between 1 and 1000 objects to move".into()));
     }
     if !offset.iter().all(|v| v.is_finite() && v.abs() <= MAX_COORDINATE) || offset == [0.0, 0.0] {
         return Err(EditError::Invalid("the move must be finite and non-zero".into()));
     }
-    let inventory: BTreeMap<_, _> = editable_objects(doc, page)?.into_iter().map(|o| (o.target, o)).collect();
+    checked_streams(doc, page)?;
+    let owned_lines;
+    let lines = match lines {
+        Some(lines) => lines,
+        None => {
+            owned_lines = crate::text::text_lines(doc, page)?;
+            &owned_lines
+        }
+    };
+    let inventory: BTreeMap<_, _> = editable_objects_with_lines(doc, page, Some(lines))?.into_iter().map(|o| (o.target, o)).collect();
     let mut unique = BTreeSet::new();
     for target in targets {
         if !unique.insert(*target) {
@@ -122,14 +151,14 @@ pub fn move_objects(doc: &mut Document, page: usize, targets: &[ObjectTarget], o
     }
     let indexes = |kind| targets.iter().filter(|t| t.kind == kind).map(|t| t.index).collect::<Vec<_>>();
     let mut work = doc.clone();
-    crate::text::translate_blocks(&mut work, page, &indexes(ObjectKind::Text), offset)?;
+    crate::text::translate_blocks_with_lines(&mut work, page, &indexes(ObjectKind::Text), offset, Some(lines))?;
     crate::images::translate_images(&mut work, page, &indexes(ObjectKind::Image), offset)?;
     translate_added(&mut work, page, &indexes(ObjectKind::Added), offset)?;
     // Placement operators add to size/depth/work budgets, and moving paragraphs can change
     // their grouping. Keep the resulting inventory usable; refuse before swapping otherwise.
-    editable_objects(&work, page)?;
+    let updated = editable_objects(&work, page)?;
     *doc = work;
-    Ok(())
+    Ok(updated)
 }
 
 struct AddedGeometry {
@@ -290,7 +319,7 @@ fn translate_added(doc: &mut Document, page: usize, indexes: &[usize], offset: [
 
 /// A missing or undecodable preceding stream can hide graphics state that affects every
 /// later item. Refuse group editing rather than inventing an inventory from partial data.
-fn checked_streams(doc: &Document, page: usize) -> Result<Vec<(Object, Vec<u8>)>, EditError> {
+pub(crate) fn checked_streams(doc: &Document, page: usize) -> Result<Vec<(Object, Vec<u8>)>, EditError> {
     let p = pdfcraft_model::pages(doc).into_iter().nth(page).ok_or(EditError::NoSuchPage(page))?;
     let contents = match p.dict.get(b"Contents") {
         None => Vec::new(),

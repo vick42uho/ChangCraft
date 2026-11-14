@@ -216,6 +216,21 @@ pub(crate) fn edge_scroll(pointer: Option<Pos2>, viewport: egui::Rect, dt: f32) 
     vec2(axis(p.x, viewport.left(), viewport.right()), axis(p.y, viewport.top(), viewport.bottom()))
 }
 
+/// Vertical-only edge scroll while dragging an object, text block, image, or added content:
+/// never triggers inside the viewport (so positioning near table edges stays steady), and scrolls
+/// vertically only once the pointer moves past the top or bottom of `viewport`.
+pub(crate) fn outside_vertical_edge_scroll(pointer: Option<Pos2>, viewport: egui::Rect, dt: f32) -> Vec2 {
+    let Some(p) = pointer.filter(|p| p.is_finite()) else { return Vec2::ZERO };
+    if !dt.is_finite() || !viewport.is_positive() {
+        return Vec2::ZERO;
+    }
+    let dt = dt.clamp(0.0, 0.05);
+    let depth = |d: f32| (d / EDGE_BAND).clamp(0.0, 1.5);
+    let before = depth(viewport.top() - p.y);
+    let after = depth(p.y - viewport.bottom());
+    vec2(0.0, (before * before - after * after) * DRAW_EDGE_SPEED * dt)
+}
+
 /// Within this distance of the viewport's top or bottom edge, a text-selection drag scrolls.
 const EDGE: f32 = 30.0;
 /// Points per second for each point the pointer is into the edge band or past the viewport.
@@ -297,6 +312,24 @@ mod tests {
             assert_eq!(d, Vec2::ZERO, "nothing moves once the button is up");
             assert!(!s.blocks_input());
         });
+    }
+
+    #[test]
+    fn outside_vertical_edge_scroll_ignores_interior_edges_and_horizontal_overshoot() {
+        let viewport = egui::Rect::from_min_max(Pos2::ZERO, egui::pos2(800.0, 600.0));
+        // Inside the viewport — even 1px from left/right/top/bottom — never auto-scrolls.
+        assert_eq!(outside_vertical_edge_scroll(Some(egui::pos2(1.0, 1.0)), viewport, 0.016), Vec2::ZERO);
+        assert_eq!(outside_vertical_edge_scroll(Some(egui::pos2(799.0, 599.0)), viewport, 0.016), Vec2::ZERO);
+        // Past the left/right edges while vertically inside never pans sideways.
+        assert_eq!(outside_vertical_edge_scroll(Some(egui::pos2(-20.0, 300.0)), viewport, 0.016), Vec2::ZERO);
+        assert_eq!(outside_vertical_edge_scroll(Some(egui::pos2(820.0, 300.0)), viewport, 0.016), Vec2::ZERO);
+        // Past top scrolls down (positive y reveals earlier pages), past bottom scrolls up.
+        let up = outside_vertical_edge_scroll(Some(egui::pos2(400.0, -16.0)), viewport, 0.016);
+        assert_eq!(up.x, 0.0);
+        assert!(up.y > 0.0);
+        let down = outside_vertical_edge_scroll(Some(egui::pos2(400.0, 616.0)), viewport, 0.016);
+        assert_eq!(down.x, 0.0);
+        assert!(down.y < 0.0);
     }
 
     #[test]

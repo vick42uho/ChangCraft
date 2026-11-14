@@ -45,7 +45,7 @@ pub fn rasterize(doc: &Document, pages: &[usize], raster: &Raster, hide_comments
             });
         } else {
             let max_slice_h = (MAX_SLICE_PIXELS / u64::from(r.width)).max(64) as u32;
-            let num_slices = (r.height + max_slice_h - 1) / max_slice_h;
+            let num_slices = r.height.div_ceil(max_slice_h);
             for k in 0..num_slices {
                 let start_row = k * max_slice_h;
                 let end_row = (start_row + max_slice_h).min(r.height);
