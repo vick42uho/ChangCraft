@@ -14,7 +14,7 @@
   <a href="https://github.com/vick42uho/ChangCraft/releases/latest"><img alt="Latest Release" src="https://img.shields.io/github/v/release/vick42uho/ChangCraft?style=flat-square&color=12a58a"></a>
   <img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-12a58a?style=flat-square">
   <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-0a7563?style=flat-square">
-  <img alt="Platform: Windows x64 | Linux x64" src="https://img.shields.io/badge/platform-Windows%20x64%20%7C%20Linux%20x64-12a58a?style=flat-square">
+  <img alt="Platform: Windows x64/ARM64 | Linux x64" src="https://img.shields.io/badge/platform-Windows%20x64%2FARM64%20%7C%20Linux%20x64-12a58a?style=flat-square">
   <img alt="Offline & Private" src="https://img.shields.io/badge/privacy-100%25%20offline-0a7563?style=flat-square">
 </p>
 
@@ -27,6 +27,8 @@
 | :--- | :--- | :--- |
 | **📦 Windows Installer (MSI)** | ตัวติดตั้งมาตรฐาน Windows x64 มี Shortcut และไอคอนช้างไทย ติดตั้งควบคู่กับ PdfCraft ต้นฉบับได้ | [**ดาวน์โหลด .msi (v0.20.0)**](https://github.com/vick42uho/ChangCraft/releases/download/v0.20.0/changcraft-0.20.0-windows-x64.msi) |
 | **⚡ Windows Portable (ZIP)** | เวอร์ชันพกพา Windows x64 แตกไฟล์แล้วเปิด `changcraft.exe` ใช้งานได้ทันที ไม่ต้องติดตั้ง | [**ดาวน์โหลด .zip (v0.20.0)**](https://github.com/vick42uho/ChangCraft/releases/download/v0.20.0/changcraft-0.20.0-windows-x64-portable.zip) |
+| **📦 Windows ARM64 Installer (MSI)** | ตัวติดตั้งมาตรฐานสำหรับ Windows on ARM64 (Snapdragon / Copilot+ PC) | [**ดาวน์โหลด ARM64 .msi (v0.20.0)**](https://github.com/vick42uho/ChangCraft/releases/download/v0.20.0/changcraft-0.20.0-windows-arm64.msi) |
+| **⚡ Windows ARM64 Portable (ZIP)** | เวอร์ชันพกพาสำหรับ Windows on ARM64 แตกไฟล์เปิด `changcraft.exe` ได้ทันที | [**ดาวน์โหลด ARM64 .zip (v0.20.0)**](https://github.com/vick42uho/ChangCraft/releases/download/v0.20.0/changcraft-0.20.0-windows-arm64-portable.zip) |
 | **🐧 Linux Debian / Ubuntu (.deb)** | แพ็กเกจติดตั้งมาตรฐานสำหรับ Ubuntu / Debian x86_64 | [**ดาวน์โหลด .deb (v0.20.0)**](https://github.com/vick42uho/ChangCraft/releases/download/v0.20.0/changcraft-0.20.0-linux-amd64.deb) |
 | **🐧 Linux Portable (.tar.gz)** | เวอร์ชันพกพาสำหรับ Linux x86_64 แตกไฟล์แล้วรัน `./changcraft` ได้ทันที | [**ดาวน์โหลด .tar.gz (v0.20.0)**](https://github.com/vick42uho/ChangCraft/releases/download/v0.20.0/changcraft-0.20.0-linux-x64.tar.gz) |
 
